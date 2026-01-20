@@ -122,6 +122,11 @@ export function createWebServer(clientId: string, port: number = 3001) {
 
   // Get frontend URL from environment or default to localhost (support multiple Vite ports)
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5174";
+  const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : `http://127.0.0.1:${port}`;
+  const redirectUri = `${baseUrl}/api/auth/callback`;
+
   const allowedOrigins = [
     "http://localhost:5173",
     "http://localhost:5174",
@@ -129,14 +134,15 @@ export function createWebServer(clientId: string, port: number = 3001) {
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
     "http://127.0.0.1:5175",
-  ];
-  const redirectUri = `http://127.0.0.1:${port}/api/auth/callback`;
+    frontendUrl, // Add the configured frontend URL
+  ].filter(Boolean);
 
   app.use(cors({
     origin: (origin, callback) => {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
+        console.log(`CORS blocked origin: ${origin}`);
         callback(new Error("Not allowed by CORS"));
       }
     },
@@ -146,6 +152,11 @@ export function createWebServer(clientId: string, port: number = 3001) {
 
   // Cleanup PKCE store periodically
   setInterval(cleanupPkceStore, 60000);
+
+  // Health check endpoint for Railway
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
 
   // ============ AUTH ENDPOINTS ============
 
