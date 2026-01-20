@@ -137,13 +137,22 @@ export function createWebServer(clientId: string, port: number = 3001) {
     frontendUrl, // Add the configured frontend URL
   ].filter(Boolean);
 
+  console.log("Allowed CORS origins:", allowedOrigins);
+  console.log("Frontend URL:", frontendUrl);
+
   app.use(cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.log(`CORS blocked origin: ${origin}`);
-        callback(new Error("Not allowed by CORS"));
+        console.log(`CORS blocked origin: ${origin}, allowed: ${allowedOrigins.join(", ")}`);
+        // Return false instead of throwing error to avoid 500
+        callback(null, false);
       }
     },
     credentials: true,
