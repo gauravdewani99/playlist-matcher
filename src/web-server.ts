@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { SpotifyClient } from "./spotify/client.js";
 import { GenreMatcher } from "./matching/genre-matcher.js";
 import { TokenStore, StoredTokens } from "./auth/token-store.js";
+import { SettingsStore, UserSettings } from "./storage/settings-store.js";
 
 const SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
@@ -116,6 +117,7 @@ class WebSpotifyOAuth {
 export function createWebServer(clientId: string, port: number = 3001) {
   const app = express();
   const tokenStore = new TokenStore();
+  const settingsStore = new SettingsStore();
   const oauth = new WebSpotifyOAuth(clientId, tokenStore);
   const spotifyClient = new SpotifyClient(oauth as any);
   const genreMatcher = new GenreMatcher(spotifyClient);
@@ -377,6 +379,65 @@ export function createWebServer(clientId: string, port: number = 3001) {
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to organize" });
+    }
+  });
+
+  // ============ SETTINGS ENDPOINTS ============
+
+  // Get user settings
+  app.get("/api/settings", async (_req, res) => {
+    try {
+      const user = await spotifyClient.getCurrentUser();
+      const settings = await settingsStore.getSettings(user.id);
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to fetch settings" });
+    }
+  });
+
+  // Save user settings
+  app.put("/api/settings", async (req, res) => {
+    try {
+      const user = await spotifyClient.getCurrentUser();
+      const { songsToMatch, intervalDays, scheduleHours, scheduleMinutes } = req.body;
+
+      const updates: Partial<UserSettings> = {};
+      if (typeof songsToMatch === "number") updates.songsToMatch = songsToMatch;
+      if (typeof intervalDays === "number") updates.intervalDays = intervalDays;
+      if (typeof scheduleHours === "number") updates.scheduleHours = scheduleHours;
+      if (typeof scheduleMinutes === "number") updates.scheduleMinutes = scheduleMinutes;
+
+      const settings = await settingsStore.saveSettings(user.id, updates);
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to save settings" });
+    }
+  });
+
+  // ============ TRACK MANAGEMENT ENDPOINTS ============
+
+  // Move track between playlists
+  app.post("/api/playlists/move-track", async (req, res) => {
+    try {
+      const { trackId, fromPlaylistId, toPlaylistId } = req.body;
+
+      if (!trackId || !toPlaylistId) {
+        return res.status(400).json({ error: "trackId and toPlaylistId required" });
+      }
+
+      const trackUri = `spotify:track:${trackId}`;
+
+      // Remove from source playlist if specified
+      if (fromPlaylistId) {
+        await spotifyClient.removeTracksFromPlaylist(fromPlaylistId, [trackUri]);
+      }
+
+      // Add to destination playlist
+      await spotifyClient.addTracksToPlaylist(toPlaylistId, [trackUri]);
+
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to move track" });
     }
   });
 

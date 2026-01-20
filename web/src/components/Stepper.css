@@ -130,11 +130,100 @@
   box-shadow: 0 0 10px var(--spotify-green);
 }
 
+/* Compact Stepper */
+.stepper-wrapper-compact {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.stepper-compact {
+  flex-direction: row;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  gap: var(--spacing-xs);
+  cursor: ew-resize;
+}
+
+.stepper-compact:hover {
+  transform: translateY(-1px) rotateY(2deg);
+}
+
+.stepper-compact.dragging {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.stepper-compact .stepper-btn {
+  width: 24px;
+  height: 28px;
+}
+
+.stepper-display-compact {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 0 var(--spacing-xs);
+  min-width: 40px;
+  justify-content: center;
+}
+
+.stepper-display-compact .stepper-value {
+  font-size: var(--font-size-lg);
+  min-width: auto;
+}
+
+.stepper-display-compact .stepper-suffix {
+  font-size: var(--font-size-xs);
+}
+
+/* Minute Toggle Button */
+.minute-toggle {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: linear-gradient(145deg, #1e1e1e, #151515);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--spotify-white);
+  min-width: 44px;
+  text-align: center;
+  transition: all var(--transition-fast);
+  box-shadow:
+    0 4px 15px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  font-variant-numeric: tabular-nums;
+}
+
+.minute-toggle:hover {
+  background: var(--spotify-dark-highlight);
+  transform: translateY(-1px);
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.minute-toggle:active {
+  transform: scale(0.98);
+}
+
+.minute-toggle-vertical {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-2xl);
+  min-width: 60px;
+}
+
 /* Time Picker */
 .time-picker {
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
+}
+
+.time-picker-compact {
+  gap: var(--spacing-xs);
+}
+
+.time-picker-compact .time-separator {
+  font-size: var(--font-size-lg);
 }
 
 .time-separator {

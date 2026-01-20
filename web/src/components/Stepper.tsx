@@ -8,11 +8,13 @@ interface StepperProps {
   onChange: (value: number) => void;
   label?: string;
   suffix?: string;
+  compact?: boolean;
 }
 
-export function Stepper({ value, min, max, onChange, label, suffix }: StepperProps) {
+export function Stepper({ value, min, max, onChange, label, suffix, compact }: StepperProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [startY, setStartY] = useState(0);
+  const [startX, setStartX] = useState(0);
   const [startValue, setStartValue] = useState(value);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -26,26 +28,33 @@ export function Stepper({ value, min, max, onChange, label, suffix }: StepperPro
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
     setStartY(e.clientY);
+    setStartX(e.clientX);
     setStartValue(value);
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setIsDragging(true);
     setStartY(e.touches[0].clientY);
+    setStartX(e.touches[0].clientX);
     setStartValue(value);
   };
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging) return;
-      const delta = Math.round((startY - e.clientY) / 10);
+      // For compact mode, use horizontal drag; for normal, use vertical
+      const delta = compact
+        ? Math.round((e.clientX - startX) / 10)
+        : Math.round((startY - e.clientY) / 10);
       const newValue = Math.max(min, Math.min(max, startValue + delta));
       onChange(newValue);
     };
 
     const handleTouchMove = (e: TouchEvent) => {
       if (!isDragging) return;
-      const delta = Math.round((startY - e.touches[0].clientY) / 10);
+      const delta = compact
+        ? Math.round((e.touches[0].clientX - startX) / 10)
+        : Math.round((startY - e.touches[0].clientY) / 10);
       const newValue = Math.max(min, Math.min(max, startValue + delta));
       onChange(newValue);
     };
@@ -67,7 +76,7 @@ export function Stepper({ value, min, max, onChange, label, suffix }: StepperPro
       window.removeEventListener("touchmove", handleTouchMove);
       window.removeEventListener("touchend", handleEnd);
     };
-  }, [isDragging, startY, startValue, min, max, onChange]);
+  }, [isDragging, startY, startX, startValue, min, max, onChange, compact]);
 
   const increment = () => {
     if (value < max) onChange(value + 1);
@@ -76,6 +85,48 @@ export function Stepper({ value, min, max, onChange, label, suffix }: StepperPro
   const decrement = () => {
     if (value > min) onChange(value - 1);
   };
+
+  if (compact) {
+    return (
+      <div className="stepper-wrapper stepper-wrapper-compact">
+        {label && <span className="stepper-label">{label}</span>}
+        <div
+          ref={containerRef}
+          className={`stepper-container stepper-compact ${isDragging ? "dragging" : ""}`}
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onTouchStart={handleTouchStart}
+        >
+          <button
+            className="stepper-btn stepper-btn-left"
+            onClick={decrement}
+            disabled={value <= min}
+            aria-label="Decrease"
+          >
+            <svg viewBox="0 0 16 16" fill="currentColor">
+              <path d="M10 4l-4 4 4 4V4z" />
+            </svg>
+          </button>
+
+          <div className="stepper-display-compact">
+            <span className="stepper-value">{value}</span>
+            {suffix && <span className="stepper-suffix">{suffix}</span>}
+          </div>
+
+          <button
+            className="stepper-btn stepper-btn-right"
+            onClick={increment}
+            disabled={value >= max}
+            aria-label="Increase"
+          >
+            <svg viewBox="0 0 16 16" fill="currentColor">
+              <path d="M6 4l4 4-4 4V4z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="stepper-wrapper">
@@ -131,9 +182,37 @@ interface TimePickerProps {
   minutes: number;
   onHoursChange: (hours: number) => void;
   onMinutesChange: (minutes: number) => void;
+  compact?: boolean;
 }
 
-export function TimePicker({ hours, minutes, onHoursChange, onMinutesChange }: TimePickerProps) {
+export function TimePicker({ hours, minutes, onHoursChange, onMinutesChange, compact }: TimePickerProps) {
+  // Toggle between 0 and 30 for minutes
+  const toggleMinutes = () => {
+    onMinutesChange(minutes === 0 ? 30 : 0);
+  };
+
+  if (compact) {
+    return (
+      <div className="time-picker time-picker-compact">
+        <Stepper
+          value={hours}
+          min={0}
+          max={23}
+          onChange={onHoursChange}
+          compact
+        />
+        <span className="time-separator">:</span>
+        <button
+          className="minute-toggle"
+          onClick={toggleMinutes}
+          aria-label="Toggle minutes between 00 and 30"
+        >
+          {minutes.toString().padStart(2, "0")}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="time-picker">
       <Stepper
@@ -143,12 +222,13 @@ export function TimePicker({ hours, minutes, onHoursChange, onMinutesChange }: T
         onChange={onHoursChange}
       />
       <span className="time-separator">:</span>
-      <Stepper
-        value={minutes}
-        min={0}
-        max={59}
-        onChange={onMinutesChange}
-      />
+      <button
+        className="minute-toggle minute-toggle-vertical"
+        onClick={toggleMinutes}
+        aria-label="Toggle minutes between 00 and 30"
+      >
+        {minutes.toString().padStart(2, "0")}
+      </button>
     </div>
   );
 }

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Stepper, TimePicker } from "./Stepper";
-import type { SpotifyUser } from "../api";
+import { getSettings, saveSettings as saveSettingsApi } from "../api";
+import type { SpotifyUser, UserSettings } from "../api";
 import "./Home.css";
 
 interface HomeProps {
@@ -9,49 +10,52 @@ interface HomeProps {
   onLogout: () => void;
 }
 
-interface Settings {
-  songsToMatch: number;
-  intervalDays: number;
-  scheduleHours: number;
-  scheduleMinutes: number;
-}
-
-const SETTINGS_KEY = "playlist-matcher-settings";
-
-function loadSettings(): Settings {
-  try {
-    const stored = localStorage.getItem(SETTINGS_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch {
-    // ignore
-  }
-  return {
-    songsToMatch: 20,
-    intervalDays: 7,
-    scheduleHours: 9,
-    scheduleMinutes: 0,
-  };
-}
-
-function saveSettings(settings: Settings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-}
+const DEFAULT_SETTINGS: UserSettings = {
+  songsToMatch: 20,
+  intervalDays: 7,
+  scheduleHours: 9,
+  scheduleMinutes: 0,
+  lastUpdated: 0,
+};
 
 export function Home({ user, onViewDashboard, onLogout }: HomeProps) {
-  const [settings, setSettings] = useState<Settings>(loadSettings);
+  const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const updateSetting = <K extends keyof Settings>(key: K, value: Settings[K]) => {
+  useEffect(() => {
+    loadSettingsFromServer();
+  }, []);
+
+  async function loadSettingsFromServer() {
+    try {
+      setLoading(true);
+      const serverSettings = await getSettings();
+      setSettings(serverSettings);
+    } catch (err) {
+      console.error("Failed to load settings:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const updateSetting = <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
     setSaved(false);
   };
 
-  const handleSave = () => {
-    saveSettings(settings);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      await saveSettingsApi(settings);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      console.error("Failed to save settings:", err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const formatTime = (hours: number, minutes: number) => {
@@ -85,65 +89,66 @@ export function Home({ user, onViewDashboard, onLogout }: HomeProps) {
           <h1 className="settings-title">Playlist Matcher</h1>
           <p className="settings-subtitle">Automatically organize your liked songs</p>
 
-          <div className="settings-sentence">
-            <span className="sentence-text">Match my last</span>
-            <div className="sentence-control">
-              <Stepper
-                value={settings.songsToMatch}
-                min={1}
-                max={100}
-                onChange={(v) => updateSetting("songsToMatch", v)}
-              />
+          {loading ? (
+            <div className="settings-loading">
+              <div className="loader" />
             </div>
-            <span className="sentence-text">liked songs</span>
-          </div>
+          ) : (
+            <>
+              <div className="settings-sentence-inline">
+                <span className="sentence-text">Match my last</span>
+                <Stepper
+                  value={settings.songsToMatch}
+                  min={1}
+                  max={100}
+                  onChange={(v) => updateSetting("songsToMatch", v)}
+                  compact
+                />
+                <span className="sentence-text">liked songs every</span>
+                <Stepper
+                  value={settings.intervalDays}
+                  min={1}
+                  max={100}
+                  onChange={(v) => updateSetting("intervalDays", v)}
+                  suffix={settings.intervalDays === 1 ? "day" : "days"}
+                  compact
+                />
+                <span className="sentence-text">at</span>
+                <TimePicker
+                  hours={settings.scheduleHours}
+                  minutes={settings.scheduleMinutes}
+                  onHoursChange={(v) => updateSetting("scheduleHours", v)}
+                  onMinutesChange={(v) => updateSetting("scheduleMinutes", v)}
+                  compact
+                />
+              </div>
 
-          <div className="settings-sentence">
-            <span className="sentence-text">every</span>
-            <div className="sentence-control">
-              <Stepper
-                value={settings.intervalDays}
-                min={1}
-                max={100}
-                onChange={(v) => updateSetting("intervalDays", v)}
-                suffix={settings.intervalDays === 1 ? "day" : "days"}
-              />
-            </div>
-          </div>
+              <button
+                className={`save-btn ${saved ? "saved" : ""}`}
+                onClick={handleSave}
+                disabled={saving}
+              >
+                {saved ? (
+                  <>
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="check-icon">
+                      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                    </svg>
+                    Saved
+                  </>
+                ) : saving ? (
+                  "Saving..."
+                ) : (
+                  "Save Settings"
+                )}
+              </button>
 
-          <div className="settings-sentence">
-            <span className="sentence-text">at</span>
-            <div className="sentence-control">
-              <TimePicker
-                hours={settings.scheduleHours}
-                minutes={settings.scheduleMinutes}
-                onHoursChange={(v) => updateSetting("scheduleHours", v)}
-                onMinutesChange={(v) => updateSetting("scheduleMinutes", v)}
-              />
-            </div>
-          </div>
-
-          <button
-            className={`save-btn ${saved ? "saved" : ""}`}
-            onClick={handleSave}
-          >
-            {saved ? (
-              <>
-                <svg viewBox="0 0 24 24" fill="currentColor" className="check-icon">
-                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
-                </svg>
-                Saved
-              </>
-            ) : (
-              "Save Settings"
-            )}
-          </button>
-
-          <p className="settings-summary">
-            Your {settings.songsToMatch} most recent liked songs will be matched to your playlists
-            every {settings.intervalDays} {settings.intervalDays === 1 ? "day" : "days"} at{" "}
-            {formatTime(settings.scheduleHours, settings.scheduleMinutes)}
-          </p>
+              <p className="settings-summary">
+                Your {settings.songsToMatch} most recent liked songs will be matched to your playlists
+                every {settings.intervalDays} {settings.intervalDays === 1 ? "day" : "days"} at{" "}
+                {formatTime(settings.scheduleHours, settings.scheduleMinutes)}
+              </p>
+            </>
+          )}
         </div>
       </main>
     </div>

@@ -71,6 +71,14 @@ export interface AuthStatus {
   user?: SpotifyUser;
 }
 
+export interface UserSettings {
+  songsToMatch: number;
+  intervalDays: number;
+  scheduleHours: number;
+  scheduleMinutes: number;
+  lastUpdated: number;
+}
+
 // ============ API FUNCTIONS ============
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -147,5 +155,29 @@ export async function autoOrganize(
   return fetchApi("/organize", {
     method: "POST",
     body: JSON.stringify({ likedSongsLimit, playlistLimit, threshold, dryRun }),
+  });
+}
+
+// Settings
+export async function getSettings(): Promise<UserSettings> {
+  return fetchApi("/settings");
+}
+
+export async function saveSettings(settings: Partial<UserSettings>): Promise<UserSettings> {
+  return fetchApi("/settings", {
+    method: "PUT",
+    body: JSON.stringify(settings),
+  });
+}
+
+// Track management
+export async function moveTrack(
+  trackId: string,
+  fromPlaylistId: string | null,
+  toPlaylistId: string
+): Promise<void> {
+  await fetchApi("/playlists/move-track", {
+    method: "POST",
+    body: JSON.stringify({ trackId, fromPlaylistId, toPlaylistId }),
   });
 }
