@@ -4,6 +4,8 @@ import os from "os";
 
 export interface MatchRecord {
   trackId: string;
+  trackName: string;
+  artistNames: string;
   playlistId: string;
   playlistName: string;
   matchedAt: number;

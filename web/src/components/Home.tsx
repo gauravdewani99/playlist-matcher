@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Stepper, HourStepper } from "./Stepper";
-import { getSettings, saveSettings as saveSettingsApi } from "../api";
-import type { SpotifyUser, UserSettings } from "../api";
+import { getSettings, saveSettings as saveSettingsApi, getSchedule } from "../api";
+import type { SpotifyUser, UserSettings, ScheduledJob } from "../api";
 import "./Home.css";
 
 interface HomeProps {
@@ -28,9 +28,11 @@ function formatHourAmPm(hour: number): string {
 
 export function Home({ user, onViewDashboard, onLogout, onLogin }: HomeProps) {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  const [schedule, setSchedule] = useState<ScheduledJob | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!!user);
+  const [countdown, setCountdown] = useState<string>("");
 
   useEffect(() => {
     if (user) {
@@ -38,11 +40,52 @@ export function Home({ user, onViewDashboard, onLogout, onLogin }: HomeProps) {
     }
   }, [user]);
 
+  // Update countdown every second
+  useEffect(() => {
+    if (!schedule) {
+      setCountdown("");
+      return;
+    }
+
+    function updateCountdown() {
+      if (!schedule) return;
+
+      const now = Date.now();
+      const diff = schedule.nextRunAt - now;
+
+      if (diff <= 0) {
+        setCountdown("Any moment now");
+        return;
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      if (days > 0) {
+        setCountdown(`${days}d ${hours}h ${minutes}m`);
+      } else if (hours > 0) {
+        setCountdown(`${hours}h ${minutes}m ${seconds}s`);
+      } else {
+        setCountdown(`${minutes}m ${seconds}s`);
+      }
+    }
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [schedule]);
+
   async function loadSettingsFromServer() {
     try {
       setLoading(true);
-      const serverSettings = await getSettings();
+      const [serverSettings, scheduleData] = await Promise.all([
+        getSettings(),
+        getSchedule(),
+      ]);
       setSettings(serverSettings);
+      setSchedule("enabled" in scheduleData && scheduleData.enabled ? scheduleData : null);
     } catch (err) {
       console.error("Failed to load settings:", err);
     } finally {
@@ -63,8 +106,12 @@ export function Home({ user, onViewDashboard, onLogout, onLogin }: HomeProps) {
 
     try {
       setSaving(true);
-      await saveSettingsApi(settings);
+      const result = await saveSettingsApi(settings);
       setSaved(true);
+      // Update schedule with new nextScheduledRun
+      if (result.nextScheduledRun) {
+        setSchedule((prev) => prev ? { ...prev, nextRunAt: result.nextScheduledRun! } : null);
+      }
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
       console.error("Failed to save settings:", err);
@@ -72,6 +119,25 @@ export function Home({ user, onViewDashboard, onLogout, onLogin }: HomeProps) {
       setSaving(false);
     }
   };
+
+  function formatLastSync(timestamp: number): string {
+    if (!timestamp) return "Never";
+
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) {
+      return `Today at ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+    } else if (diffDays === 1) {
+      return "Yesterday";
+    } else if (diffDays < 7) {
+      return `${diffDays} days ago`;
+    } else {
+      return date.toLocaleDateString([], { month: "short", day: "numeric" });
+    }
+  }
 
   return (
     <div className="home">
@@ -181,10 +247,29 @@ export function Home({ user, onViewDashboard, onLogout, onLogin }: HomeProps) {
                 Your {settings.songsToMatch} most recent liked {settings.songsToMatch === 1 ? "song" : "songs"} will be matched to your playlists
                 every {settings.intervalDays} {settings.intervalDays === 1 ? "day" : "days"} at {formatHourAmPm(settings.scheduleHours)}
               </p>
+
+              {/* Sync Status for logged-in users */}
+              {user && schedule && (
+                <div className="sync-status">
+                  <div className="sync-status-item">
+                    <span className="sync-status-label">Last sync</span>
+                    <span className="sync-status-value">{formatLastSync(settings.lastUpdated)}</span>
+                  </div>
+                  <div className="sync-status-divider" />
+                  <div className="sync-status-item">
+                    <span className="sync-status-label">Next sync in</span>
+                    <span className="sync-status-value countdown">{countdown}</span>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
       </main>
+
+      <footer className="home-footer">
+        <span>© 2025 Sortify. All rights reserved.</span>
+      </footer>
     </div>
   );
 }

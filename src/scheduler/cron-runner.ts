@@ -138,6 +138,8 @@ export class CronRunner {
       if (newMatches.length > 0) {
         const matchRecords = newMatches.map(m => ({
           trackId: m.trackId,
+          trackName: m.trackName,
+          artistNames: m.artistNames,
           playlistId: m.playlistId,
           playlistName: m.playlistName,
           matchedAt: Date.now(),
