@@ -3,10 +3,19 @@ import cors from "cors";
 import crypto from "crypto";
 import { SpotifyClient } from "./spotify/client.js";
 import { GenreMatcher } from "./matching/genre-matcher.js";
+
+// File-based stores (fallback for local development)
 import { TokenStore } from "./auth/token-store.js";
 import { SettingsStore, UserSettings } from "./storage/settings-store.js";
 import { MatchHistoryStore } from "./storage/match-history-store.js";
 import { SchedulerStore } from "./storage/scheduler-store.js";
+
+// PostgreSQL stores (for production with DATABASE_URL)
+import { isDatabaseConfigured, initializeDatabase } from "./storage/database.js";
+import { PgTokenStore } from "./storage/pg-token-store.js";
+import { PgSettingsStore } from "./storage/pg-settings-store.js";
+import { PgMatchHistoryStore } from "./storage/pg-match-history-store.js";
+import { PgSchedulerStore } from "./storage/pg-scheduler-store.js";
 
 const SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
@@ -56,12 +65,42 @@ function cleanupPkceStore() {
   }
 }
 
-// Simple OAuth class for web that uses the shared token store
+// Common token store interface
+interface ITokenStore {
+  saveTokens(tokens: { accessToken: string; refreshToken: string; expiresAt: number }): Promise<void>;
+  getTokens(): Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null>;
+  clearTokens(): Promise<void>;
+}
+
+// Common settings store interface
+interface ISettingsStore {
+  getSettings(userId: string): Promise<UserSettings>;
+  saveSettings(userId: string, updates: Partial<UserSettings>): Promise<UserSettings>;
+}
+
+// Common match history store interface
+interface IMatchHistoryStore {
+  getHistory(userId: string): Promise<{ matches: any[]; lastMatchRun: number }>;
+  addMatches(userId: string, matches: any[]): Promise<void>;
+  removeMatch(userId: string, trackId: string): Promise<void>;
+  getMatchedTrackIds(userId: string): Promise<Set<string>>;
+}
+
+// Common scheduler store interface
+interface ISchedulerStore {
+  scheduleJob(userId: string, intervalDays: number, scheduleHours: number): Promise<any>;
+  getJob(userId: string): Promise<any | null>;
+  getJobsDueNow(): Promise<any[]>;
+  updateNextRun(userId: string): Promise<any>;
+  disableJob(userId: string): Promise<void>;
+}
+
+// OAuth class that works with either token store
 class WebSpotifyOAuth {
   private clientId: string;
-  private tokenStore: TokenStore;
+  private tokenStore: ITokenStore;
 
-  constructor(clientId: string, tokenStore: TokenStore) {
+  constructor(clientId: string, tokenStore: ITokenStore) {
     this.clientId = clientId;
     this.tokenStore = tokenStore;
   }
@@ -116,12 +155,40 @@ class WebSpotifyOAuth {
   }
 }
 
-export function createWebServer(clientId: string, port: number = 3001) {
+export async function createWebServer(clientId: string, port: number = 3001) {
   const app = express();
-  const tokenStore = new TokenStore();
-  const settingsStore = new SettingsStore();
-  const matchHistoryStore = new MatchHistoryStore();
-  const schedulerStore = new SchedulerStore();
+
+  // Determine storage backend
+  const usePostgres = isDatabaseConfigured();
+  console.log(`[Storage] Using ${usePostgres ? "PostgreSQL" : "file-based"} storage`);
+
+  // Initialize stores based on configuration
+  let tokenStore: ITokenStore;
+  let settingsStore: ISettingsStore;
+  let matchHistoryStore: IMatchHistoryStore;
+  let schedulerStore: ISchedulerStore;
+
+  if (usePostgres) {
+    // Initialize PostgreSQL database
+    await initializeDatabase();
+
+    const pgTokenStore = new PgTokenStore();
+    tokenStore = pgTokenStore;
+    settingsStore = new PgSettingsStore();
+    matchHistoryStore = new PgMatchHistoryStore();
+    schedulerStore = new PgSchedulerStore();
+
+    console.log("[Storage] PostgreSQL stores initialized");
+  } else {
+    // Use file-based stores
+    tokenStore = new TokenStore();
+    settingsStore = new SettingsStore();
+    matchHistoryStore = new MatchHistoryStore();
+    schedulerStore = new SchedulerStore();
+
+    console.log("[Storage] File-based stores initialized");
+  }
+
   const oauth = new WebSpotifyOAuth(clientId, tokenStore);
   const spotifyClient = new SpotifyClient(oauth as any);
   const genreMatcher = new GenreMatcher(spotifyClient);
@@ -170,7 +237,11 @@ export function createWebServer(clientId: string, port: number = 3001) {
 
   // Health check endpoint for Railway
   app.get("/health", (_req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+    res.json({
+      status: "ok",
+      storage: usePostgres ? "postgresql" : "file",
+      timestamp: new Date().toISOString(),
+    });
   });
 
   // ============ AUTH ENDPOINTS ============
@@ -240,12 +311,23 @@ export function createWebServer(clientId: string, port: number = 3001) {
 
       const tokens = await response.json();
 
-      // Save tokens
+      // Save tokens temporarily
       await tokenStore.saveTokens({
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         expiresAt: Date.now() + tokens.expires_in * 1000,
       });
+
+      // For PostgreSQL, we need to get user ID and commit tokens
+      if (usePostgres && tokenStore instanceof PgTokenStore) {
+        // Create a temporary spotify client to get user ID
+        const tempOauth = new WebSpotifyOAuth(clientId, tokenStore);
+        const tempClient = new SpotifyClient(tempOauth as any);
+        const user = await tempClient.getCurrentUser();
+
+        // Commit tokens to database with user ID
+        await (tokenStore as PgTokenStore).commitTempTokens(user.id);
+      }
 
       // Cleanup used state
       pkceStore.delete(state as string);
@@ -264,6 +346,12 @@ export function createWebServer(clientId: string, port: number = 3001) {
       const isAuth = await oauth.isAuthenticated();
       if (isAuth) {
         const user = await spotifyClient.getCurrentUser();
+
+        // For PostgreSQL, set user context for subsequent requests
+        if (usePostgres && tokenStore instanceof PgTokenStore) {
+          (tokenStore as PgTokenStore).setUserId(user.id);
+        }
+
         res.json({ authenticated: true, user });
       } else {
         res.json({ authenticated: false });
@@ -525,7 +613,7 @@ export function createWebServer(clientId: string, port: number = 3001) {
     }
   });
 
-  return app;
+  return { app, schedulerStore };
 }
 
 // Export CronRunner for external use
@@ -542,39 +630,42 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   }
 
-  const app = createWebServer(clientId, port);
-
-  // Import and start cron runner if enabled
-  if (enableCron) {
-    import("./scheduler/cron-runner.js").then(({ CronRunner }) => {
-      const cronRunner = new CronRunner({
-        clientId,
-        checkIntervalMs: 60000, // Check every minute
-        onJobStart: (job) => {
-          console.log(`[Cron] Starting job for user ${job.userId}`);
-        },
-        onJobComplete: (job, result) => {
-          console.log(
-            `[Cron] Completed job for user ${job.userId}: ` +
-            `${result.matchesAdded} tracks added to ${result.playlists.length} playlists`
-          );
-        },
-        onJobError: (job, error) => {
-          console.error(`[Cron] Job failed for user ${job.userId}:`, error.message);
-        },
-      });
-      cronRunner.start();
-      console.log("Cron runner started");
-    });
-  }
-
-  app.listen(port, () => {
-    console.log(`Playlist Matcher API running on http://localhost:${port}`);
-    console.log(`Frontend should run on http://localhost:5173`);
+  createWebServer(clientId, port).then(({ app }) => {
+    // Import and start cron runner if enabled
     if (enableCron) {
-      console.log("Cron runner: enabled (checking every minute)");
-    } else {
-      console.log("Cron runner: disabled (set ENABLE_CRON=true to enable)");
+      import("./scheduler/cron-runner.js").then(({ CronRunner }) => {
+        const cronRunner = new CronRunner({
+          clientId,
+          checkIntervalMs: 60000, // Check every minute
+          onJobStart: (job) => {
+            console.log(`[Cron] Starting job for user ${job.userId}`);
+          },
+          onJobComplete: (job, result) => {
+            console.log(
+              `[Cron] Completed job for user ${job.userId}: ` +
+              `${result.matchesAdded} tracks added to ${result.playlists.length} playlists`
+            );
+          },
+          onJobError: (job, error) => {
+            console.error(`[Cron] Job failed for user ${job.userId}:`, error.message);
+          },
+        });
+        cronRunner.start();
+        console.log("Cron runner started");
+      });
     }
+
+    app.listen(port, () => {
+      console.log(`Playlist Matcher API running on http://localhost:${port}`);
+      console.log(`Frontend should run on http://localhost:5173`);
+      if (enableCron) {
+        console.log("Cron runner: enabled (checking every minute)");
+      } else {
+        console.log("Cron runner: disabled (set ENABLE_CRON=true to enable)");
+      }
+    });
+  }).catch((err) => {
+    console.error("Failed to start server:", err);
+    process.exit(1);
   });
 }
