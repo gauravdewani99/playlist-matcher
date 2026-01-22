@@ -160,6 +160,7 @@ export async function createWebServer(clientId: string, port: number = 3001) {
 
   // Determine storage backend
   const usePostgres = isDatabaseConfigured();
+  console.log(`[Storage] DATABASE_URL is ${process.env.DATABASE_URL ? "set" : "NOT set"}`);
   console.log(`[Storage] Using ${usePostgres ? "PostgreSQL" : "file-based"} storage`);
 
   // Initialize stores based on configuration
@@ -240,6 +241,7 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     res.json({
       status: "ok",
       storage: usePostgres ? "postgresql" : "file",
+      databaseConfigured: !!process.env.DATABASE_URL,
       timestamp: new Date().toISOString(),
     });
   });
