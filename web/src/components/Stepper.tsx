@@ -7,55 +7,112 @@ interface StepperProps {
   max: number;
   onChange: (value: number) => void;
   label?: string;
-  suffix?: string;
-  compact?: boolean;
+  circular?: boolean;
 }
 
-export function Stepper({ value, min, max, onChange, label, suffix, compact }: StepperProps) {
+export function Stepper({ value, min, max, onChange, label, circular }: StepperProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [startY, setStartY] = useState(0);
-  const [startX, setStartX] = useState(0);
   const [startValue, setStartValue] = useState(value);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const handleWheel = (e: React.WheelEvent) => {
+    if (isEditing) return;
     e.preventDefault();
     const delta = e.deltaY > 0 ? -1 : 1;
-    const newValue = Math.max(min, Math.min(max, value + delta));
+    let newValue = value + delta;
+    if (circular) {
+      if (newValue > max) newValue = min;
+      else if (newValue < min) newValue = max;
+    } else {
+      newValue = Math.max(min, Math.min(max, newValue));
+    }
     onChange(newValue);
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (isEditing) return;
     setIsDragging(true);
     setStartY(e.clientY);
-    setStartX(e.clientX);
     setStartValue(value);
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (isEditing) return;
     setIsDragging(true);
     setStartY(e.touches[0].clientY);
-    setStartX(e.touches[0].clientX);
     setStartValue(value);
   };
+
+  const handleDoubleClick = () => {
+    setIsEditing(true);
+    setEditValue(value.toString());
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (/^\d*$/.test(val)) {
+      setEditValue(val);
+    }
+  };
+
+  const handleInputBlur = () => {
+    commitEdit();
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      commitEdit();
+    } else if (e.key === "Escape") {
+      setIsEditing(false);
+      setEditValue("");
+    }
+  };
+
+  const commitEdit = () => {
+    const parsed = parseInt(editValue, 10);
+    if (!isNaN(parsed)) {
+      const clamped = Math.max(min, Math.min(max, parsed));
+      onChange(clamped);
+    }
+    setIsEditing(false);
+    setEditValue("");
+  };
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging) return;
-      // For compact mode, use horizontal drag; for normal, use vertical
-      const delta = compact
-        ? Math.round((e.clientX - startX) / 10)
-        : Math.round((startY - e.clientY) / 10);
-      const newValue = Math.max(min, Math.min(max, startValue + delta));
+      const delta = Math.round((startY - e.clientY) / 15);
+      let newValue = startValue + delta;
+      if (circular) {
+        const range = max - min + 1;
+        newValue = ((newValue - min) % range + range) % range + min;
+      } else {
+        newValue = Math.max(min, Math.min(max, newValue));
+      }
       onChange(newValue);
     };
 
     const handleTouchMove = (e: TouchEvent) => {
       if (!isDragging) return;
-      const delta = compact
-        ? Math.round((e.touches[0].clientX - startX) / 10)
-        : Math.round((startY - e.touches[0].clientY) / 10);
-      const newValue = Math.max(min, Math.min(max, startValue + delta));
+      const delta = Math.round((startY - e.touches[0].clientY) / 15);
+      let newValue = startValue + delta;
+      if (circular) {
+        const range = max - min + 1;
+        newValue = ((newValue - min) % range + range) % range + min;
+      } else {
+        newValue = Math.max(min, Math.min(max, newValue));
+      }
       onChange(newValue);
     };
 
@@ -76,57 +133,27 @@ export function Stepper({ value, min, max, onChange, label, suffix, compact }: S
       window.removeEventListener("touchmove", handleTouchMove);
       window.removeEventListener("touchend", handleEnd);
     };
-  }, [isDragging, startY, startX, startValue, min, max, onChange, compact]);
+  }, [isDragging, startY, startValue, min, max, onChange, circular]);
 
   const increment = () => {
-    if (value < max) onChange(value + 1);
+    let newValue = value + 1;
+    if (circular && newValue > max) {
+      newValue = min;
+    } else if (!circular && newValue > max) {
+      return;
+    }
+    onChange(newValue);
   };
 
   const decrement = () => {
-    if (value > min) onChange(value - 1);
+    let newValue = value - 1;
+    if (circular && newValue < min) {
+      newValue = max;
+    } else if (!circular && newValue < min) {
+      return;
+    }
+    onChange(newValue);
   };
-
-  if (compact) {
-    return (
-      <div className="stepper-wrapper stepper-wrapper-compact">
-        {label && <span className="stepper-label">{label}</span>}
-        <div
-          ref={containerRef}
-          className={`stepper-container stepper-compact ${isDragging ? "dragging" : ""}`}
-          onWheel={handleWheel}
-          onMouseDown={handleMouseDown}
-          onTouchStart={handleTouchStart}
-        >
-          <button
-            className="stepper-btn stepper-btn-left"
-            onClick={decrement}
-            disabled={value <= min}
-            aria-label="Decrease"
-          >
-            <svg viewBox="0 0 16 16" fill="currentColor">
-              <path d="M10 4l-4 4 4 4V4z" />
-            </svg>
-          </button>
-
-          <div className="stepper-display-compact">
-            <span className="stepper-value">{value}</span>
-            {suffix && <span className="stepper-suffix">{suffix}</span>}
-          </div>
-
-          <button
-            className="stepper-btn stepper-btn-right"
-            onClick={increment}
-            disabled={value >= max}
-            aria-label="Increase"
-          >
-            <svg viewBox="0 0 16 16" fill="currentColor">
-              <path d="M6 4l4 4-4 4V4z" />
-            </svg>
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="stepper-wrapper">
@@ -137,11 +164,11 @@ export function Stepper({ value, min, max, onChange, label, suffix, compact }: S
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
+        onDoubleClick={handleDoubleClick}
       >
         <button
           className="stepper-btn stepper-btn-up"
-          onClick={increment}
-          disabled={value >= max}
+          onClick={(e) => { e.stopPropagation(); increment(); }}
           aria-label="Increase"
         >
           <svg viewBox="0 0 16 16" fill="currentColor">
@@ -150,22 +177,26 @@ export function Stepper({ value, min, max, onChange, label, suffix, compact }: S
         </button>
 
         <div className="stepper-display">
-          <div className="stepper-value-container">
-            <span className="stepper-value">{value}</span>
-            {suffix && <span className="stepper-suffix">{suffix}</span>}
-          </div>
-          <div className="stepper-track">
-            <div
-              className="stepper-progress"
-              style={{ height: `${((value - min) / (max - min)) * 100}%` }}
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              className="stepper-input"
+              value={editValue}
+              onChange={handleInputChange}
+              onBlur={handleInputBlur}
+              onKeyDown={handleInputKeyDown}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
             />
-          </div>
+          ) : (
+            <span className="stepper-value">{value}</span>
+          )}
         </div>
 
         <button
           className="stepper-btn stepper-btn-down"
-          onClick={decrement}
-          disabled={value <= min}
+          onClick={(e) => { e.stopPropagation(); decrement(); }}
           aria-label="Decrease"
         >
           <svg viewBox="0 0 16 16" fill="currentColor">
@@ -177,58 +208,203 @@ export function Stepper({ value, min, max, onChange, label, suffix, compact }: S
   );
 }
 
-interface TimePickerProps {
+// Hour-only stepper (circular 0-23)
+interface HourStepperProps {
+  value: number;
+  onChange: (value: number) => void;
+}
+
+export function HourStepper({ value, onChange }: HourStepperProps) {
+  const [isDragging, setIsDragging] = useState(false);
+  const [startY, setStartY] = useState(0);
+  const [startValue, setStartValue] = useState(value);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleWheel = (e: React.WheelEvent) => {
+    if (isEditing) return;
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -1 : 1;
+    let newValue = value + delta;
+    // Circular: 23 -> 0 and 0 -> 23
+    if (newValue > 23) newValue = 0;
+    else if (newValue < 0) newValue = 23;
+    onChange(newValue);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (isEditing) return;
+    setIsDragging(true);
+    setStartY(e.clientY);
+    setStartValue(value);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (isEditing) return;
+    setIsDragging(true);
+    setStartY(e.touches[0].clientY);
+    setStartValue(value);
+  };
+
+  const handleDoubleClick = () => {
+    setIsEditing(true);
+    setEditValue(value.toString());
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (/^\d*$/.test(val) && val.length <= 2) {
+      setEditValue(val);
+    }
+  };
+
+  const handleInputBlur = () => {
+    commitEdit();
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      commitEdit();
+    } else if (e.key === "Escape") {
+      setIsEditing(false);
+      setEditValue("");
+    }
+  };
+
+  const commitEdit = () => {
+    const parsed = parseInt(editValue, 10);
+    if (!isNaN(parsed)) {
+      const clamped = Math.max(0, Math.min(23, parsed));
+      onChange(clamped);
+    }
+    setIsEditing(false);
+    setEditValue("");
+  };
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      const delta = Math.round((startY - e.clientY) / 15);
+      let newValue = startValue + delta;
+      // Circular wrap
+      newValue = ((newValue % 24) + 24) % 24;
+      onChange(newValue);
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isDragging) return;
+      const delta = Math.round((startY - e.touches[0].clientY) / 15);
+      let newValue = startValue + delta;
+      // Circular wrap
+      newValue = ((newValue % 24) + 24) % 24;
+      onChange(newValue);
+    };
+
+    const handleEnd = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleEnd);
+      window.addEventListener("touchmove", handleTouchMove);
+      window.addEventListener("touchend", handleEnd);
+    }
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleEnd);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleEnd);
+    };
+  }, [isDragging, startY, startValue, onChange]);
+
+  const increment = () => {
+    let newValue = value + 1;
+    if (newValue > 23) newValue = 0;
+    onChange(newValue);
+  };
+
+  const decrement = () => {
+    let newValue = value - 1;
+    if (newValue < 0) newValue = 23;
+    onChange(newValue);
+  };
+
+  const displayValue = value.toString().padStart(2, "0");
+
+  return (
+    <div className="stepper-wrapper">
+      <div
+        ref={containerRef}
+        className={`stepper-container ${isDragging ? "dragging" : ""}`}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onTouchStart={handleTouchStart}
+        onDoubleClick={handleDoubleClick}
+      >
+        <button
+          className="stepper-btn stepper-btn-up"
+          onClick={(e) => { e.stopPropagation(); increment(); }}
+          aria-label="Increase hour"
+        >
+          <svg viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 4l4 4H4l4-4z" />
+          </svg>
+        </button>
+
+        <div className="stepper-display">
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              className="stepper-input"
+              value={editValue}
+              onChange={handleInputChange}
+              onBlur={handleInputBlur}
+              onKeyDown={handleInputKeyDown}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <span className="stepper-value">{displayValue}</span>
+          )}
+        </div>
+
+        <button
+          className="stepper-btn stepper-btn-down"
+          onClick={(e) => { e.stopPropagation(); decrement(); }}
+          aria-label="Decrease hour"
+        >
+          <svg viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 12l-4-4h8l-4 4z" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Legacy exports for backwards compatibility
+export function TimeStepperCombined({ hours, onChange }: { hours: number; minutes: number; onChange: (hours: number, minutes: number) => void }) {
+  return <HourStepper value={hours} onChange={(h) => onChange(h, 0)} />;
+}
+
+export function TimePicker({ hours, onHoursChange }: {
   hours: number;
   minutes: number;
   onHoursChange: (hours: number) => void;
   onMinutesChange: (minutes: number) => void;
   compact?: boolean;
-}
-
-export function TimePicker({ hours, minutes, onHoursChange, onMinutesChange, compact }: TimePickerProps) {
-  // Toggle between 0 and 30 for minutes
-  const toggleMinutes = () => {
-    onMinutesChange(minutes === 0 ? 30 : 0);
-  };
-
-  if (compact) {
-    return (
-      <div className="time-picker time-picker-compact">
-        <Stepper
-          value={hours}
-          min={0}
-          max={23}
-          onChange={onHoursChange}
-          compact
-        />
-        <span className="time-separator">:</span>
-        <button
-          className="minute-toggle"
-          onClick={toggleMinutes}
-          aria-label="Toggle minutes between 00 and 30"
-        >
-          {minutes.toString().padStart(2, "0")}
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="time-picker">
-      <Stepper
-        value={hours}
-        min={0}
-        max={23}
-        onChange={onHoursChange}
-      />
-      <span className="time-separator">:</span>
-      <button
-        className="minute-toggle minute-toggle-vertical"
-        onClick={toggleMinutes}
-        aria-label="Toggle minutes between 00 and 30"
-      >
-        {minutes.toString().padStart(2, "0")}
-      </button>
-    </div>
-  );
+}) {
+  return <HourStepper value={hours} onChange={onHoursChange} />;
 }

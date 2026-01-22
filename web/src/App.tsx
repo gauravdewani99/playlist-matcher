@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { getAuthStatus, getAuthUrl, logout } from "./api";
 import type { AuthStatus } from "./api";
-import { LoginScreen } from "./components/LoginScreen";
 import { Home } from "./components/Home";
 import { NewDashboard } from "./components/NewDashboard";
 import "./App.css";
@@ -74,17 +73,8 @@ function App() {
     );
   }
 
-  if (!authStatus?.authenticated) {
-    return (
-      <LoginScreen
-        onLogin={handleLogin}
-        error={error}
-        onDismissError={() => setError(null)}
-      />
-    );
-  }
-
-  if (view === "dashboard") {
+  // Show dashboard if authenticated and on dashboard view
+  if (authStatus?.authenticated && view === "dashboard") {
     return (
       <NewDashboard
         user={authStatus.user!}
@@ -94,12 +84,22 @@ function App() {
     );
   }
 
+  // Show Home for both logged in and logged out users
   return (
-    <Home
-      user={authStatus.user!}
-      onViewDashboard={() => setView("dashboard")}
-      onLogout={handleLogout}
-    />
+    <>
+      {error && (
+        <div className="app-error">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="error-dismiss">&times;</button>
+        </div>
+      )}
+      <Home
+        user={authStatus?.authenticated ? authStatus.user! : null}
+        onViewDashboard={() => setView("dashboard")}
+        onLogout={handleLogout}
+        onLogin={handleLogin}
+      />
+    </>
   );
 }
 

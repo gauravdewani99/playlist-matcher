@@ -3,8 +3,10 @@ import cors from "cors";
 import crypto from "crypto";
 import { SpotifyClient } from "./spotify/client.js";
 import { GenreMatcher } from "./matching/genre-matcher.js";
-import { TokenStore, StoredTokens } from "./auth/token-store.js";
+import { TokenStore } from "./auth/token-store.js";
 import { SettingsStore, UserSettings } from "./storage/settings-store.js";
+import { MatchHistoryStore } from "./storage/match-history-store.js";
+import { SchedulerStore } from "./storage/scheduler-store.js";
 
 const SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
@@ -118,6 +120,8 @@ export function createWebServer(clientId: string, port: number = 3001) {
   const app = express();
   const tokenStore = new TokenStore();
   const settingsStore = new SettingsStore();
+  const matchHistoryStore = new MatchHistoryStore();
+  const schedulerStore = new SchedulerStore();
   const oauth = new WebSpotifyOAuth(clientId, tokenStore);
   const spotifyClient = new SpotifyClient(oauth as any);
   const genreMatcher = new GenreMatcher(spotifyClient);
@@ -345,23 +349,37 @@ export function createWebServer(clientId: string, port: number = 3001) {
 
   // ============ MATCHING ENDPOINTS ============
 
-  // Match songs to playlists
+  // Match songs to playlists (filters out already-matched songs)
   app.get("/api/match", async (req, res) => {
     try {
-      const likedSongsLimit = Math.min(50, Math.max(1, parseInt(req.query.likedSongsLimit as string) || 20));
-      const playlistLimit = Math.min(20, Math.max(1, parseInt(req.query.playlistLimit as string) || 10));
+      const user = await spotifyClient.getCurrentUser();
+      const likedSongsLimit = Math.min(100, Math.max(1, parseInt(req.query.likedSongsLimit as string) || 20));
+      const playlistLimit = Math.min(50, Math.max(1, parseInt(req.query.playlistLimit as string) || 10));
       const threshold = Math.min(1, Math.max(0, parseFloat(req.query.threshold as string) || 0.15));
 
+      // Get already matched track IDs
+      const matchedTrackIds = await matchHistoryStore.getMatchedTrackIds(user.id);
+
+      // Get match results, the genreMatcher will handle the matching
       const result = await genreMatcher.matchSongsToPlaylists(likedSongsLimit, playlistLimit, threshold);
-      res.json(result);
+
+      // Filter out already matched songs
+      const newMatches = result.matches.filter(m => !matchedTrackIds.has(m.trackId));
+
+      res.json({
+        matches: newMatches,
+        unmatched: result.unmatched,
+        alreadyMatched: result.matches.length - newMatches.length,
+      });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to match songs" });
     }
   });
 
-  // Auto-organize (preview or execute)
+  // Auto-organize (preview or execute) - records matches to history
   app.post("/api/organize", async (req, res) => {
     try {
+      const user = await spotifyClient.getCurrentUser();
       const {
         likedSongsLimit = 20,
         playlistLimit = 10,
@@ -369,14 +387,35 @@ export function createWebServer(clientId: string, port: number = 3001) {
         dryRun = true,
       } = req.body;
 
+      // Get already matched track IDs to filter them out
+      const matchedTrackIds = await matchHistoryStore.getMatchedTrackIds(user.id);
+
       const result = await genreMatcher.autoOrganize(
-        Math.min(50, Math.max(1, likedSongsLimit)),
-        Math.min(20, Math.max(1, playlistLimit)),
+        Math.min(100, Math.max(1, likedSongsLimit)),
+        Math.min(50, Math.max(1, playlistLimit)),
         Math.min(1, Math.max(0, threshold)),
         dryRun
       );
 
-      res.json(result);
+      // Filter out already matched songs
+      const newMatches = result.matches.filter(m => !matchedTrackIds.has(m.trackId));
+
+      // If not dry run, record the new matches to history
+      if (!dryRun && newMatches.length > 0) {
+        const matchRecords = newMatches.map(m => ({
+          trackId: m.trackId,
+          playlistId: m.playlistId,
+          playlistName: m.playlistName,
+          matchedAt: Date.now(),
+        }));
+        await matchHistoryStore.addMatches(user.id, matchRecords);
+      }
+
+      res.json({
+        ...result,
+        matches: newMatches,
+        alreadyMatched: result.matches.length - newMatches.length,
+      });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to organize" });
     }
@@ -395,7 +434,7 @@ export function createWebServer(clientId: string, port: number = 3001) {
     }
   });
 
-  // Save user settings
+  // Save user settings and schedule cron job
   app.put("/api/settings", async (req, res) => {
     try {
       const user = await spotifyClient.getCurrentUser();
@@ -408,21 +447,60 @@ export function createWebServer(clientId: string, port: number = 3001) {
       if (typeof scheduleMinutes === "number") updates.scheduleMinutes = scheduleMinutes;
 
       const settings = await settingsStore.saveSettings(user.id, updates);
-      res.json(settings);
+
+      // Schedule/update the cron job for this user
+      const job = await schedulerStore.scheduleJob(
+        user.id,
+        settings.intervalDays,
+        settings.scheduleHours
+      );
+
+      res.json({
+        ...settings,
+        nextScheduledRun: job.nextRunAt,
+      });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to save settings" });
     }
   });
 
+  // Get match history for current user
+  app.get("/api/match-history", async (_req, res) => {
+    try {
+      const user = await spotifyClient.getCurrentUser();
+      const history = await matchHistoryStore.getHistory(user.id);
+      res.json(history);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to fetch match history" });
+    }
+  });
+
+  // Get scheduled job info for current user
+  app.get("/api/schedule", async (_req, res) => {
+    try {
+      const user = await spotifyClient.getCurrentUser();
+      const job = await schedulerStore.getJob(user.id);
+      res.json(job || { enabled: false });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to fetch schedule" });
+    }
+  });
+
   // ============ TRACK MANAGEMENT ENDPOINTS ============
 
-  // Move track between playlists
+  // Move track between playlists (or just remove from playlist)
   app.post("/api/playlists/move-track", async (req, res) => {
     try {
+      const user = await spotifyClient.getCurrentUser();
       const { trackId, fromPlaylistId, toPlaylistId } = req.body;
 
-      if (!trackId || !toPlaylistId) {
-        return res.status(400).json({ error: "trackId and toPlaylistId required" });
+      if (!trackId) {
+        return res.status(400).json({ error: "trackId required" });
+      }
+
+      // Must have at least one playlist to act on
+      if (!fromPlaylistId && !toPlaylistId) {
+        return res.status(400).json({ error: "At least one of fromPlaylistId or toPlaylistId required" });
       }
 
       const trackUri = `spotify:track:${trackId}`;
@@ -430,10 +508,14 @@ export function createWebServer(clientId: string, port: number = 3001) {
       // Remove from source playlist if specified
       if (fromPlaylistId) {
         await spotifyClient.removeTracksFromPlaylist(fromPlaylistId, [trackUri]);
+        // Also remove from match history so it can be re-matched in the future
+        await matchHistoryStore.removeMatch(user.id, trackId);
       }
 
-      // Add to destination playlist
-      await spotifyClient.addTracksToPlaylist(toPlaylistId, [trackUri]);
+      // Add to destination playlist if specified
+      if (toPlaylistId) {
+        await spotifyClient.addTracksToPlaylist(toPlaylistId, [trackUri]);
+      }
 
       res.json({ success: true });
     } catch (error) {
@@ -444,10 +526,14 @@ export function createWebServer(clientId: string, port: number = 3001) {
   return app;
 }
 
+// Export CronRunner for external use
+export { CronRunner } from "./scheduler/cron-runner.js";
+
 // CLI entry point for web server
 if (import.meta.url === `file://${process.argv[1]}`) {
   const clientId = process.env.SPOTIFY_CLIENT_ID;
   const port = parseInt(process.env.PORT || "3001");
+  const enableCron = process.env.ENABLE_CRON !== "false"; // Enabled by default
 
   if (!clientId) {
     console.error("Error: SPOTIFY_CLIENT_ID environment variable is required");
@@ -455,8 +541,38 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
 
   const app = createWebServer(clientId, port);
+
+  // Import and start cron runner if enabled
+  if (enableCron) {
+    import("./scheduler/cron-runner.js").then(({ CronRunner }) => {
+      const cronRunner = new CronRunner({
+        clientId,
+        checkIntervalMs: 60000, // Check every minute
+        onJobStart: (job) => {
+          console.log(`[Cron] Starting job for user ${job.userId}`);
+        },
+        onJobComplete: (job, result) => {
+          console.log(
+            `[Cron] Completed job for user ${job.userId}: ` +
+            `${result.matchesAdded} tracks added to ${result.playlists.length} playlists`
+          );
+        },
+        onJobError: (job, error) => {
+          console.error(`[Cron] Job failed for user ${job.userId}:`, error.message);
+        },
+      });
+      cronRunner.start();
+      console.log("Cron runner started");
+    });
+  }
+
   app.listen(port, () => {
     console.log(`Playlist Matcher API running on http://localhost:${port}`);
     console.log(`Frontend should run on http://localhost:5173`);
+    if (enableCron) {
+      console.log("Cron runner: enabled (checking every minute)");
+    } else {
+      console.log("Cron runner: disabled (set ENABLE_CRON=true to enable)");
+    }
   });
 }

@@ -57,6 +57,7 @@ export interface MatchResult {
 export interface MatchResponse {
   matches: MatchResult[];
   unmatched: { trackName: string; artistNames: string; reason: string }[];
+  alreadyMatched?: number;
 }
 
 export interface OrganizeResponse {
@@ -77,6 +78,27 @@ export interface UserSettings {
   scheduleHours: number;
   scheduleMinutes: number;
   lastUpdated: number;
+  nextScheduledRun?: number;
+}
+
+export interface MatchRecord {
+  trackId: string;
+  playlistId: string;
+  playlistName: string;
+  matchedAt: number;
+}
+
+export interface MatchHistory {
+  matches: MatchRecord[];
+  lastMatchRun: number;
+}
+
+export interface ScheduledJob {
+  userId: string;
+  nextRunAt: number;
+  intervalDays: number;
+  scheduleHours: number;
+  enabled: boolean;
 }
 
 // ============ API FUNCTIONS ============
@@ -174,10 +196,32 @@ export async function saveSettings(settings: Partial<UserSettings>): Promise<Use
 export async function moveTrack(
   trackId: string,
   fromPlaylistId: string | null,
-  toPlaylistId: string
+  toPlaylistId: string | null
 ): Promise<void> {
   await fetchApi("/playlists/move-track", {
     method: "POST",
-    body: JSON.stringify({ trackId, fromPlaylistId, toPlaylistId }),
+    body: JSON.stringify({
+      trackId,
+      fromPlaylistId: fromPlaylistId || undefined,
+      toPlaylistId: toPlaylistId || undefined
+    }),
   });
+}
+
+// Remove track from playlist
+export async function removeTrackFromPlaylist(
+  trackId: string,
+  playlistId: string
+): Promise<void> {
+  await moveTrack(trackId, playlistId, null);
+}
+
+// Match history
+export async function getMatchHistory(): Promise<MatchHistory> {
+  return fetchApi("/match-history");
+}
+
+// Schedule
+export async function getSchedule(): Promise<ScheduledJob | { enabled: false }> {
+  return fetchApi("/schedule");
 }
