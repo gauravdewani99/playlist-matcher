@@ -166,6 +166,14 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
     return Array.from(groups.values()).sort((a, b) => b.tracks.length - a.tracks.length);
   }
 
+  function openTrackInSpotify(trackId: string) {
+    window.open(`spotify:track:${trackId}`, "_blank");
+  }
+
+  function openPlaylistInSpotify(playlistId: string) {
+    window.open(`spotify:playlist:${playlistId}`, "_blank");
+  }
+
   const playlistGroups = groupByPlaylist();
 
   return (
@@ -249,12 +257,22 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                   </span>
                 </div>
               ) : viewMode === "by-track" ? (
-                <div className="matches-list">
-                  {history?.matches.map((match) => (
-                    <div
-                      key={match.trackId}
-                      className="match-row"
-                    >
+                <div className="tracks-list">
+                  {history?.matches.map((match, index) => (
+                    <div key={match.trackId} className="track-row">
+                      <div className="track-index-container">
+                        <span className="track-index">{index + 1}</span>
+                        <button
+                          className="track-play-btn"
+                          onClick={() => openTrackInSpotify(match.trackId)}
+                          aria-label={`Play ${match.trackName}`}
+                        >
+                          <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </button>
+                      </div>
+
                       <button
                         className="match-checkbox"
                         onClick={() => handleUnmatchClick(match)}
@@ -265,10 +283,10 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                         </svg>
                       </button>
 
-                      <div className="match-track-info">
-                        <span className="match-track-name">{match.trackName || match.trackId}</span>
+                      <div className="track-info">
+                        <span className="track-name">{match.trackName || match.trackId}</span>
                         {match.artistNames && (
-                          <span className="match-track-artist">{match.artistNames}</span>
+                          <span className="track-artist">{match.artistNames}</span>
                         )}
                       </div>
 
@@ -276,8 +294,16 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                         <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" />
                       </svg>
 
-                      <div className="match-playlist-info">
-                        <div className="match-playlist-image">
+                      <div
+                        className="playlist-chip"
+                        onClick={() => openPlaylistInSpotify(match.playlistId)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") openPlaylistInSpotify(match.playlistId);
+                        }}
+                      >
+                        <div className="playlist-chip-image">
                           {getPlaylistImage(match.playlistId) ? (
                             <img src={getPlaylistImage(match.playlistId)!} alt="" />
                           ) : (
@@ -286,10 +312,10 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                             </svg>
                           )}
                         </div>
-                        <span className="match-playlist-name">{match.playlistName}</span>
+                        <span className="playlist-chip-name">{match.playlistName}</span>
                       </div>
 
-                      <span className="match-date">{formatDate(match.matchedAt)}</span>
+                      <span className="track-date">{formatDate(match.matchedAt)}</span>
                     </div>
                   ))}
                 </div>
@@ -297,7 +323,15 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                 <div className="playlist-groups">
                   {playlistGroups.map((group) => (
                     <div key={group.playlistId} className="playlist-group">
-                      <div className="playlist-group-header">
+                      <div
+                        className="playlist-group-header"
+                        onClick={() => openPlaylistInSpotify(group.playlistId)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") openPlaylistInSpotify(group.playlistId);
+                        }}
+                      >
                         <div className="playlist-group-image">
                           {getPlaylistImage(group.playlistId) ? (
                             <img src={getPlaylistImage(group.playlistId)!} alt="" />
@@ -306,6 +340,11 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                               <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z" />
                             </svg>
                           )}
+                          <div className="playlist-play-overlay">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                          </div>
                         </div>
                         <div className="playlist-group-info">
                           <span className="playlist-group-name">{group.playlistName}</span>
@@ -315,8 +354,20 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                         </div>
                       </div>
                       <div className="playlist-group-tracks">
-                        {group.tracks.map((track) => (
+                        {group.tracks.map((track, index) => (
                           <div key={track.trackId} className="playlist-track-row">
+                            <div className="track-index-container small">
+                              <span className="track-index">{index + 1}</span>
+                              <button
+                                className="track-play-btn"
+                                onClick={() => openTrackInSpotify(track.trackId)}
+                                aria-label={`Play ${track.trackName}`}
+                              >
+                                <svg viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M8 5v14l11-7z" />
+                                </svg>
+                              </button>
+                            </div>
                             <button
                               className="match-checkbox small"
                               onClick={() => handleUnmatchClick(track)}
@@ -326,7 +377,12 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                                 <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
                               </svg>
                             </button>
-                            <span className="playlist-track-name">{track.trackName || track.trackId}</span>
+                            <div className="playlist-track-info">
+                              <span className="playlist-track-name">{track.trackName || track.trackId}</span>
+                              {track.artistNames && (
+                                <span className="playlist-track-artist">{track.artistNames}</span>
+                              )}
+                            </div>
                             <span className="playlist-track-date">{formatDate(track.matchedAt)}</span>
                           </div>
                         ))}
