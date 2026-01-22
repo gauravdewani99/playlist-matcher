@@ -23,7 +23,6 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
   const [schedule, setSchedule] = useState<ScheduledJob | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>("by-track");
-  const [removing, setRemoving] = useState<string | null>(null);
 
   // Modal state
   const [modalTrack, setModalTrack] = useState<MatchRecord | null>(null);
@@ -254,12 +253,11 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                   {history?.matches.map((match) => (
                     <div
                       key={match.trackId}
-                      className={`match-row ${removing === match.trackId ? "removing" : ""}`}
+                      className="match-row"
                     >
                       <button
                         className="match-checkbox"
                         onClick={() => handleUnmatchClick(match)}
-                        disabled={removing === match.trackId}
                         aria-label="Unmatch track"
                       >
                         <svg viewBox="0 0 24 24" fill="currentColor">
