@@ -1,9 +1,18 @@
 import { SpotifyClient } from "../spotify/client.js";
 import { GenreMatcher } from "../matching/genre-matcher.js";
+
+// File-based stores (fallback)
 import { TokenStore } from "../auth/token-store.js";
 import { SettingsStore } from "../storage/settings-store.js";
 import { MatchHistoryStore } from "../storage/match-history-store.js";
 import { SchedulerStore, ScheduledJob } from "../storage/scheduler-store.js";
+
+// PostgreSQL stores
+import { isDatabaseConfigured } from "../storage/database.js";
+import { PgTokenStore } from "../storage/pg-token-store.js";
+import { PgSettingsStore } from "../storage/pg-settings-store.js";
+import { PgMatchHistoryStore } from "../storage/pg-match-history-store.js";
+import { PgSchedulerStore } from "../storage/pg-scheduler-store.js";
 
 interface CronRunnerOptions {
   clientId: string;
@@ -20,15 +29,37 @@ interface JobResult {
   playlists: string[];
 }
 
+// Store interfaces for polymorphism
+interface ITokenStore {
+  getTokens(userId?: string): Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null>;
+  saveTokens(tokens: { accessToken: string; refreshToken: string; expiresAt: number }, userId?: string): Promise<void>;
+}
+
+interface ISettingsStore {
+  getSettings(userId: string): Promise<{ songsToMatch: number }>;
+}
+
+interface IMatchHistoryStore {
+  getMatchedTrackIds(userId: string): Promise<Set<string>>;
+  addMatches(userId: string, matches: any[]): Promise<void>;
+}
+
+interface ISchedulerStore {
+  getJobsDueNow(): Promise<ScheduledJob[]>;
+  updateNextRun(userId: string): Promise<any>;
+  disableJob(userId: string): Promise<void>;
+}
+
 export class CronRunner {
   private clientId: string;
   private checkIntervalMs: number;
   private intervalId: NodeJS.Timeout | null = null;
   private isRunning = false;
-  private tokenStore: TokenStore;
-  private settingsStore: SettingsStore;
-  private matchHistoryStore: MatchHistoryStore;
-  private schedulerStore: SchedulerStore;
+  private tokenStore: ITokenStore;
+  private settingsStore: ISettingsStore;
+  private matchHistoryStore: IMatchHistoryStore;
+  private schedulerStore: ISchedulerStore;
+  private usePostgres: boolean;
   private onJobStart?: (job: ScheduledJob) => void;
   private onJobComplete?: (job: ScheduledJob, result: JobResult) => void;
   private onJobError?: (job: ScheduledJob, error: Error) => void;
@@ -36,10 +67,22 @@ export class CronRunner {
   constructor(options: CronRunnerOptions) {
     this.clientId = options.clientId;
     this.checkIntervalMs = options.checkIntervalMs || 60000; // Default: 1 minute
-    this.tokenStore = new TokenStore();
-    this.settingsStore = new SettingsStore();
-    this.matchHistoryStore = new MatchHistoryStore();
-    this.schedulerStore = new SchedulerStore();
+    this.usePostgres = isDatabaseConfigured();
+
+    console.log(`[CronRunner] Using ${this.usePostgres ? "PostgreSQL" : "file-based"} storage`);
+
+    if (this.usePostgres) {
+      this.tokenStore = new PgTokenStore();
+      this.settingsStore = new PgSettingsStore();
+      this.matchHistoryStore = new PgMatchHistoryStore();
+      this.schedulerStore = new PgSchedulerStore();
+    } else {
+      this.tokenStore = new TokenStore();
+      this.settingsStore = new SettingsStore();
+      this.matchHistoryStore = new MatchHistoryStore();
+      this.schedulerStore = new SchedulerStore();
+    }
+
     this.onJobStart = options.onJobStart;
     this.onJobComplete = options.onJobComplete;
     this.onJobError = options.onJobError;
@@ -178,17 +221,18 @@ const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
 
 class UserSpotifyOAuth {
   private clientId: string;
-  private tokenStore: TokenStore;
+  private tokenStore: ITokenStore;
   private userId: string;
 
-  constructor(clientId: string, tokenStore: TokenStore, userId: string) {
+  constructor(clientId: string, tokenStore: ITokenStore, userId: string) {
     this.clientId = clientId;
     this.tokenStore = tokenStore;
     this.userId = userId;
   }
 
   async getValidAccessToken(): Promise<string> {
-    const tokens = await this.tokenStore.getTokens();
+    // Pass userId to getTokens for PostgreSQL store
+    const tokens = await this.tokenStore.getTokens(this.userId);
 
     if (!tokens) {
       throw new Error("Not authenticated");
@@ -218,11 +262,12 @@ class UserSpotifyOAuth {
     }
 
     const newTokens = await response.json();
+    // Pass userId to saveTokens for PostgreSQL store
     await this.tokenStore.saveTokens({
       accessToken: newTokens.access_token,
       refreshToken: newTokens.refresh_token || refreshToken,
       expiresAt: Date.now() + newTokens.expires_in * 1000,
-    });
+    }, this.userId);
 
     return newTokens.access_token;
   }
