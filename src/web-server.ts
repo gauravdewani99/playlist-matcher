@@ -578,6 +578,48 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     }
   });
 
+  // Trigger manual sync now
+  app.post("/api/sync-now", async (_req, res) => {
+    try {
+      const user = await spotifyClient.getCurrentUser();
+      const settings = await settingsStore.getSettings(user.id);
+      const matchedTrackIds = await matchHistoryStore.getMatchedTrackIds(user.id);
+
+      // Run the matching
+      const result = await genreMatcher.autoOrganize(
+        settings.songsToMatch,
+        50, // playlistLimit
+        0.15, // threshold
+        false // dryRun = false, actually add tracks
+      );
+
+      // Filter out already matched songs
+      const newMatches = result.matches.filter((m) => !matchedTrackIds.has(m.trackId));
+
+      // Record the new matches to history
+      if (newMatches.length > 0) {
+        const matchRecords = newMatches.map((m) => ({
+          trackId: m.trackId,
+          trackName: m.trackName,
+          artistNames: m.artistNames,
+          playlistId: m.playlistId,
+          playlistName: m.playlistName,
+          matchedAt: Date.now(),
+        }));
+        await matchHistoryStore.addMatches(user.id, matchRecords);
+      }
+
+      res.json({
+        success: true,
+        matchesAdded: newMatches.length,
+        alreadyMatched: result.matches.length - newMatches.length,
+        unmatched: result.unmatched.length,
+      });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Sync failed" });
+    }
+  });
+
   // ============ TRACK MANAGEMENT ENDPOINTS ============
 
   // Move track between playlists (or just remove from playlist)

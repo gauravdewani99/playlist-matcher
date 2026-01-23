@@ -164,6 +164,50 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* Subtle Sync Now Button */
+.sync-now-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  color: var(--spotify-text-subdued);
+  opacity: 0.6;
+  transition: all var(--transition-fast);
+  margin-left: var(--spacing-xs);
+}
+
+.sync-now-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.sync-now-btn:hover {
+  opacity: 1;
+  color: var(--spotify-white);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sync-now-btn:active {
+  transform: scale(0.95);
+}
+
+.sync-now-btn.syncing {
+  opacity: 1;
+  color: var(--spotify-green);
+  animation: spin 1s linear infinite;
+}
+
+.sync-now-btn:disabled {
+  cursor: not-allowed;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .sync-stats {
   display: flex;
   flex-direction: column;

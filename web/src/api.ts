@@ -227,3 +227,15 @@ export async function getMatchHistory(): Promise<MatchHistory> {
 export async function getSchedule(): Promise<ScheduledJob | { enabled: false }> {
   return fetchApi("/schedule");
 }
+
+// Sync now
+export interface SyncResult {
+  success: boolean;
+  matchesAdded: number;
+  alreadyMatched: number;
+  unmatched: number;
+}
+
+export async function syncNow(): Promise<SyncResult> {
+  return fetchApi("/sync-now", { method: "POST" });
+}
