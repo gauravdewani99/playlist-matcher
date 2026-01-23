@@ -41,9 +41,12 @@
 }
 
 .dashboard-title {
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-2xl);
   font-weight: 700;
-  color: var(--spotify-white);
+  background: linear-gradient(135deg, var(--spotify-white) 0%, var(--spotify-green) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .dashboard-user {
@@ -242,9 +245,9 @@
 }
 
 .view-toggle-btn {
-  padding: var(--spacing-xs) var(--spacing-md);
-  font-size: var(--font-size-sm);
-  font-weight: 500;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-size: var(--font-size-base);
+  font-weight: 600;
   color: var(--spotify-text-subdued);
   border-radius: var(--radius-full);
   transition: all var(--transition-fast);

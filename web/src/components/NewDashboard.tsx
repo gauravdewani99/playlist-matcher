@@ -32,9 +32,49 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
   // Sync state
   const [syncing, setSyncing] = useState(false);
 
+  // Countdown state
+  const [countdown, setCountdown] = useState<string>("");
+
   useEffect(() => {
     loadData();
   }, []);
+
+  // Update countdown every second
+  useEffect(() => {
+    if (!schedule) {
+      setCountdown("");
+      return;
+    }
+
+    function updateCountdown() {
+      if (!schedule) return;
+
+      const now = Date.now();
+      const diff = schedule.nextRunAt - now;
+
+      if (diff <= 0) {
+        setCountdown("Any moment now");
+        return;
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      if (days > 0) {
+        setCountdown(`${days}d ${hours}h ${minutes}m`);
+      } else if (hours > 0) {
+        setCountdown(`${hours}h ${minutes}m ${seconds}s`);
+      } else {
+        setCountdown(`${minutes}m ${seconds}s`);
+      }
+    }
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [schedule]);
 
   async function loadData() {
     setLoading(true);
@@ -86,27 +126,6 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
       return `${diffDays} days ago`;
     } else {
       return date.toLocaleDateString([], { month: "short", day: "numeric" });
-    }
-  }
-
-  function formatNextSync(timestamp: number): string {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = date.getTime() - now.getTime();
-
-    if (diffMs <= 0) return "Any moment now";
-
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-
-    if (diffHours === 0) {
-      return `${diffMins}m`;
-    } else if (diffHours < 24) {
-      return `${diffHours}h ${diffMins}m`;
-    } else {
-      const days = Math.floor(diffHours / 24);
-      const hours = diffHours % 24;
-      return `${days}d ${hours}h`;
     }
   }
 
@@ -232,7 +251,7 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                 <div className="sync-item">
                   <span className="sync-label">Next sync</span>
                   <span className="sync-value sync-countdown">
-                    {schedule ? formatNextSync(schedule.nextRunAt) : "Not scheduled"}
+                    {schedule ? countdown || "Calculating..." : "Not scheduled"}
                   </span>
                 </div>
                 <button
