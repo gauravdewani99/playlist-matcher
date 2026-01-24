@@ -91,6 +91,26 @@ export async function initializeDatabase(): Promise<void> {
       last_match_run BIGINT NOT NULL DEFAULT 0,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- User sessions table (for secure per-user authentication)
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      session_id VARCHAR(64) PRIMARY KEY,
+      user_id VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      expires_at TIMESTAMP NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES user_tokens(user_id) ON DELETE CASCADE
+    );
+
+    -- Index for session cleanup
+    CREATE INDEX IF NOT EXISTS idx_sessions_expires ON user_sessions(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id);
+
+    -- Temporary OAuth state storage (for PKCE flow)
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      state VARCHAR(64) PRIMARY KEY,
+      code_verifier VARCHAR(128) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   console.log("[Database] Schema initialized successfully");

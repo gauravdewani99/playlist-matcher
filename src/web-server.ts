@@ -1,6 +1,7 @@
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import crypto from "crypto";
+import cookieParser from "cookie-parser";
 import { SpotifyClient } from "./spotify/client.js";
 import { GenreMatcher } from "./matching/genre-matcher.js";
 
@@ -12,10 +13,11 @@ import { SchedulerStore } from "./storage/scheduler-store.js";
 
 // PostgreSQL stores (for production with DATABASE_URL)
 import { isDatabaseConfigured, initializeDatabase } from "./storage/database.js";
-import { PgTokenStore } from "./storage/pg-token-store.js";
+import { PgTokenStore, OAuthTokenBuffer, StoredTokens } from "./storage/pg-token-store.js";
 import { PgSettingsStore } from "./storage/pg-settings-store.js";
 import { PgMatchHistoryStore } from "./storage/pg-match-history-store.js";
 import { PgSchedulerStore } from "./storage/pg-scheduler-store.js";
+import { SessionStore, OAuthStateStore } from "./storage/session-store.js";
 
 const SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
@@ -28,9 +30,15 @@ const SCOPES = [
   "playlist-modify-private",
 ].join(" ");
 
-// In-memory store for PKCE verifiers (in production, use Redis or similar)
-const pkceStore = new Map<string, { verifier: string; createdAt: number }>();
+const SESSION_COOKIE_NAME = "sortify_session";
 
+// Extend Express Request to include user context
+interface AuthenticatedRequest extends Request {
+  userId?: string;
+  accessToken?: string;
+}
+
+// PKCE helpers
 function generateCodeVerifier(length: number = 64): string {
   const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
   const randomValues = crypto.getRandomValues(new Uint8Array(length));
@@ -55,21 +63,11 @@ function generateState(): string {
   return crypto.randomBytes(16).toString("hex");
 }
 
-// Cleanup old PKCE entries (older than 10 minutes)
-function cleanupPkceStore() {
-  const now = Date.now();
-  for (const [state, data] of pkceStore.entries()) {
-    if (now - data.createdAt > 600000) {
-      pkceStore.delete(state);
-    }
-  }
-}
-
 // Common token store interface
 interface ITokenStore {
-  saveTokens(tokens: { accessToken: string; refreshToken: string; expiresAt: number }): Promise<void>;
-  getTokens(): Promise<{ accessToken: string; refreshToken: string; expiresAt: number } | null>;
-  clearTokens(): Promise<void>;
+  saveTokens(tokens: StoredTokens, userId?: string): Promise<void>;
+  getTokens(userId?: string): Promise<StoredTokens | null>;
+  clearTokens(userId?: string): Promise<void>;
 }
 
 // Common settings store interface
@@ -95,18 +93,20 @@ interface ISchedulerStore {
   disableJob(userId: string): Promise<void>;
 }
 
-// OAuth class that works with either token store
-class WebSpotifyOAuth {
+// OAuth helper that uses per-request tokens
+class RequestScopedOAuth {
   private clientId: string;
-  private tokenStore: ITokenStore;
+  private tokenStore: PgTokenStore;
+  private userId: string;
 
-  constructor(clientId: string, tokenStore: ITokenStore) {
+  constructor(clientId: string, tokenStore: PgTokenStore, userId: string) {
     this.clientId = clientId;
     this.tokenStore = tokenStore;
+    this.userId = userId;
   }
 
   async getValidAccessToken(): Promise<string> {
-    const tokens = await this.tokenStore.getTokens();
+    const tokens = await this.tokenStore.getTokens(this.userId);
 
     if (!tokens) {
       throw new Error("Not authenticated");
@@ -140,18 +140,22 @@ class WebSpotifyOAuth {
       accessToken: newTokens.access_token,
       refreshToken: newTokens.refresh_token || refreshToken,
       expiresAt: Date.now() + newTokens.expires_in * 1000,
-    });
+    }, this.userId);
 
     return newTokens.access_token;
   }
+}
 
-  async isAuthenticated(): Promise<boolean> {
-    try {
-      await this.getValidAccessToken();
-      return true;
-    } catch {
-      return false;
-    }
+// Temporary OAuth for callback (when we don't know userId yet)
+class TempOAuth {
+  private accessToken: string;
+
+  constructor(accessToken: string) {
+    this.accessToken = accessToken;
+  }
+
+  async getValidAccessToken(): Promise<string> {
+    return this.accessToken;
   }
 }
 
@@ -163,38 +167,42 @@ export async function createWebServer(clientId: string, port: number = 3001) {
   console.log(`[Storage] DATABASE_URL is ${process.env.DATABASE_URL ? "set" : "NOT set"}`);
   console.log(`[Storage] Using ${usePostgres ? "PostgreSQL" : "file-based"} storage`);
 
-  // Initialize stores based on configuration
+  // Initialize stores
   let tokenStore: ITokenStore;
+  let pgTokenStore: PgTokenStore | null = null;
   let settingsStore: ISettingsStore;
   let matchHistoryStore: IMatchHistoryStore;
   let schedulerStore: ISchedulerStore;
+  let sessionStore: SessionStore | null = null;
+  let oauthStateStore: OAuthStateStore | null = null;
+  let oauthTokenBuffer: OAuthTokenBuffer | null = null;
+
+  // In-memory PKCE store for file-based mode
+  const pkceStore = new Map<string, { verifier: string; createdAt: number }>();
 
   if (usePostgres) {
-    // Initialize PostgreSQL database
     await initializeDatabase();
 
-    const pgTokenStore = new PgTokenStore();
-    tokenStore = pgTokenStore;
+    pgTokenStore = new PgTokenStore();
+    tokenStore = pgTokenStore as unknown as ITokenStore;
     settingsStore = new PgSettingsStore();
     matchHistoryStore = new PgMatchHistoryStore();
     schedulerStore = new PgSchedulerStore();
+    sessionStore = new SessionStore();
+    oauthStateStore = new OAuthStateStore();
+    oauthTokenBuffer = new OAuthTokenBuffer();
 
-    console.log("[Storage] PostgreSQL stores initialized");
+    console.log("[Storage] PostgreSQL stores initialized with session support");
   } else {
-    // Use file-based stores
     tokenStore = new TokenStore();
     settingsStore = new SettingsStore();
     matchHistoryStore = new MatchHistoryStore();
     schedulerStore = new SchedulerStore();
 
-    console.log("[Storage] File-based stores initialized");
+    console.log("[Storage] File-based stores initialized (single-user mode)");
   }
 
-  const oauth = new WebSpotifyOAuth(clientId, tokenStore);
-  const spotifyClient = new SpotifyClient(oauth as any);
-  const genreMatcher = new GenreMatcher(spotifyClient);
-
-  // Get frontend URL from environment or default to localhost (support multiple Vite ports)
+  // Get frontend URL from environment
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5174";
   const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
@@ -208,15 +216,15 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
     "http://127.0.0.1:5175",
-    frontendUrl, // Add the configured frontend URL
+    frontendUrl,
   ].filter(Boolean);
 
   console.log("Allowed CORS origins:", allowedOrigins);
   console.log("Frontend URL:", frontendUrl);
 
+  // Middleware
   app.use(cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl)
       if (!origin) {
         callback(null, true);
         return;
@@ -224,39 +232,124 @@ export async function createWebServer(clientId: string, port: number = 3001) {
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.log(`CORS blocked origin: ${origin}, allowed: ${allowedOrigins.join(", ")}`);
-        // Return false instead of throwing error to avoid 500
+        console.log(`CORS blocked origin: ${origin}`);
         callback(null, false);
       }
     },
     credentials: true,
   }));
   app.use(express.json());
+  app.use(cookieParser());
 
-  // Cleanup PKCE store periodically
-  setInterval(cleanupPkceStore, 60000);
+  // Cleanup expired sessions and OAuth states periodically
+  if (usePostgres && sessionStore && oauthStateStore && oauthTokenBuffer) {
+    setInterval(async () => {
+      try {
+        const sessionsCleared = await sessionStore!.cleanupExpiredSessions();
+        const statesCleared = await oauthStateStore!.cleanupOldStates();
+        const tokensCleared = await oauthTokenBuffer!.cleanup();
+        if (sessionsCleared > 0 || statesCleared > 0 || tokensCleared > 0) {
+          console.log(`[Cleanup] Cleared ${sessionsCleared} sessions, ${statesCleared} states, ${tokensCleared} temp tokens`);
+        }
+      } catch (err) {
+        console.error("[Cleanup] Error:", err);
+      }
+    }, 60000);
+  } else {
+    // Cleanup PKCE store for file-based mode
+    setInterval(() => {
+      const now = Date.now();
+      for (const [state, data] of pkceStore.entries()) {
+        if (now - data.createdAt > 600000) {
+          pkceStore.delete(state);
+        }
+      }
+    }, 60000);
+  }
 
-  // Health check endpoint for Railway
+  // Authentication middleware for protected routes
+  const requireAuth = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (usePostgres && sessionStore && pgTokenStore) {
+        // PostgreSQL mode: use session cookie
+        const sessionId = req.cookies[SESSION_COOKIE_NAME];
+
+        if (!sessionId) {
+          return res.status(401).json({ error: "Not authenticated" });
+        }
+
+        const session = await sessionStore.getSession(sessionId);
+        if (!session) {
+          // Clear invalid cookie
+          res.clearCookie(SESSION_COOKIE_NAME);
+          return res.status(401).json({ error: "Session expired" });
+        }
+
+        // Set user context on request
+        req.userId = session.userId;
+
+        // Create request-scoped OAuth and get access token
+        const oauth = new RequestScopedOAuth(clientId, pgTokenStore, session.userId);
+        try {
+          req.accessToken = await oauth.getValidAccessToken();
+        } catch {
+          // Token refresh failed, session is invalid
+          await sessionStore.deleteSession(sessionId);
+          res.clearCookie(SESSION_COOKIE_NAME);
+          return res.status(401).json({ error: "Token expired" });
+        }
+
+        next();
+      } else {
+        // File-based mode: single user, no session needed
+        const tokens = await tokenStore.getTokens();
+        if (!tokens) {
+          return res.status(401).json({ error: "Not authenticated" });
+        }
+
+        req.accessToken = tokens.accessToken;
+        next();
+      }
+    } catch (error) {
+      console.error("[Auth] Middleware error:", error);
+      res.status(500).json({ error: "Authentication error" });
+    }
+  };
+
+  // Helper to create Spotify client for a request
+  const createSpotifyClient = (req: AuthenticatedRequest): SpotifyClient => {
+    const oauth = {
+      getValidAccessToken: async () => req.accessToken!,
+    };
+    return new SpotifyClient(oauth as any);
+  };
+
+  // ============ HEALTH CHECK ============
   app.get("/health", (_req, res) => {
     res.json({
       status: "ok",
       storage: usePostgres ? "postgresql" : "file",
-      databaseConfigured: !!process.env.DATABASE_URL,
+      multiUser: usePostgres,
       timestamp: new Date().toISOString(),
     });
   });
 
   // ============ AUTH ENDPOINTS ============
 
-  // Get auth URL for frontend to redirect to
+  // Get auth URL
   app.get("/api/auth/url", async (_req, res) => {
     try {
       const state = generateState();
       const verifier = generateCodeVerifier();
       const challenge = await generateCodeChallenge(verifier);
 
-      // Store verifier with state
-      pkceStore.set(state, { verifier, createdAt: Date.now() });
+      if (usePostgres && oauthStateStore) {
+        // Store in database
+        await oauthStateStore.saveState(state, verifier);
+      } else {
+        // Store in memory
+        pkceStore.set(state, { verifier, createdAt: Date.now() });
+      }
 
       const params = new URLSearchParams({
         client_id: clientId,
@@ -270,11 +363,12 @@ export async function createWebServer(clientId: string, port: number = 3001) {
 
       res.json({ url: `${SPOTIFY_AUTH_URL}?${params.toString()}` });
     } catch (error) {
+      console.error("[Auth] URL generation error:", error);
       res.status(500).json({ error: "Failed to generate auth URL" });
     }
   });
 
-  // OAuth callback - receives code from Spotify
+  // OAuth callback
   app.get("/api/auth/callback", async (req, res) => {
     const { code, state, error } = req.query;
 
@@ -286,12 +380,23 @@ export async function createWebServer(clientId: string, port: number = 3001) {
       return res.redirect(`${frontendUrl}?error=missing_params`);
     }
 
-    const pkceData = pkceStore.get(state as string);
-    if (!pkceData) {
-      return res.redirect(`${frontendUrl}?error=invalid_state`);
-    }
-
     try {
+      let verifier: string | null = null;
+
+      if (usePostgres && oauthStateStore) {
+        verifier = await oauthStateStore.consumeState(state as string);
+      } else {
+        const pkceData = pkceStore.get(state as string);
+        if (pkceData) {
+          verifier = pkceData.verifier;
+          pkceStore.delete(state as string);
+        }
+      }
+
+      if (!verifier) {
+        return res.redirect(`${frontendUrl}?error=invalid_state`);
+      }
+
       // Exchange code for tokens
       const response = await fetch(SPOTIFY_TOKEN_URL, {
         method: "POST",
@@ -301,62 +406,102 @@ export async function createWebServer(clientId: string, port: number = 3001) {
           code: code as string,
           redirect_uri: redirectUri,
           client_id: clientId,
-          code_verifier: pkceData.verifier,
+          code_verifier: verifier,
         }),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("Token exchange failed:", errorText);
+        console.error("[Auth] Token exchange failed:", errorText);
         return res.redirect(`${frontendUrl}?error=token_exchange_failed`);
       }
 
       const tokens = await response.json();
-
-      // Save tokens temporarily
-      await tokenStore.saveTokens({
+      const tokenData: StoredTokens = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         expiresAt: Date.now() + tokens.expires_in * 1000,
-      });
+      };
 
-      // For PostgreSQL, we need to get user ID and commit tokens
-      if (usePostgres && tokenStore instanceof PgTokenStore) {
-        // Create a temporary spotify client to get user ID
-        const tempOauth = new WebSpotifyOAuth(clientId, tokenStore);
+      if (usePostgres && pgTokenStore && sessionStore) {
+        // Get user ID from Spotify
+        const tempOauth = new TempOAuth(tokens.access_token);
         const tempClient = new SpotifyClient(tempOauth as any);
         const user = await tempClient.getCurrentUser();
 
-        // Commit tokens to database with user ID
-        await (tokenStore as PgTokenStore).commitTempTokens(user.id);
+        // Save tokens to database with user ID
+        await pgTokenStore.saveTokens(tokenData, user.id);
+
+        // Create session
+        const session = await sessionStore.createSession(user.id);
+
+        // Set session cookie
+        res.cookie(SESSION_COOKIE_NAME, session.sessionId, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        });
+
+        console.log(`[Auth] User ${user.id} logged in, session created`);
+      } else {
+        // File-based mode: just save tokens
+        await tokenStore.saveTokens(tokenData);
       }
 
-      // Cleanup used state
-      pkceStore.delete(state as string);
-
-      // Redirect to frontend with success
       res.redirect(`${frontendUrl}?auth=success`);
     } catch (err) {
-      console.error("Auth callback error:", err);
+      console.error("[Auth] Callback error:", err);
       res.redirect(`${frontendUrl}?error=auth_failed`);
     }
   });
 
   // Check auth status
-  app.get("/api/auth/status", async (_req, res) => {
+  app.get("/api/auth/status", async (req: AuthenticatedRequest, res) => {
     try {
-      const isAuth = await oauth.isAuthenticated();
-      if (isAuth) {
-        const user = await spotifyClient.getCurrentUser();
+      if (usePostgres && sessionStore && pgTokenStore) {
+        const sessionId = req.cookies[SESSION_COOKIE_NAME];
 
-        // For PostgreSQL, set user context for subsequent requests
-        if (usePostgres && tokenStore instanceof PgTokenStore) {
-          (tokenStore as PgTokenStore).setUserId(user.id);
+        if (!sessionId) {
+          return res.json({ authenticated: false });
         }
 
-        res.json({ authenticated: true, user });
+        const session = await sessionStore.getSession(sessionId);
+        if (!session) {
+          res.clearCookie(SESSION_COOKIE_NAME);
+          return res.json({ authenticated: false });
+        }
+
+        // Get user info
+        const oauth = new RequestScopedOAuth(clientId, pgTokenStore, session.userId);
+        try {
+          const accessToken = await oauth.getValidAccessToken();
+          const tempOauth = new TempOAuth(accessToken);
+          const client = new SpotifyClient(tempOauth as any);
+          const user = await client.getCurrentUser();
+
+          res.json({ authenticated: true, user });
+        } catch {
+          // Token invalid, clear session
+          await sessionStore.deleteSession(sessionId);
+          res.clearCookie(SESSION_COOKIE_NAME);
+          res.json({ authenticated: false });
+        }
       } else {
-        res.json({ authenticated: false });
+        // File-based mode
+        const tokens = await tokenStore.getTokens();
+        if (!tokens) {
+          return res.json({ authenticated: false });
+        }
+
+        try {
+          const tempOauth = new TempOAuth(tokens.accessToken);
+          const client = new SpotifyClient(tempOauth as any);
+          const user = await client.getCurrentUser();
+          res.json({ authenticated: true, user });
+        } catch {
+          res.json({ authenticated: false });
+        }
       }
     } catch {
       res.json({ authenticated: false });
@@ -364,20 +509,29 @@ export async function createWebServer(clientId: string, port: number = 3001) {
   });
 
   // Logout
-  app.post("/api/auth/logout", async (_req, res) => {
+  app.post("/api/auth/logout", async (req: AuthenticatedRequest, res) => {
     try {
-      await tokenStore.clearTokens();
+      if (usePostgres && sessionStore) {
+        const sessionId = req.cookies[SESSION_COOKIE_NAME];
+        if (sessionId) {
+          await sessionStore.deleteSession(sessionId);
+        }
+        res.clearCookie(SESSION_COOKIE_NAME);
+      } else {
+        await tokenStore.clearTokens();
+      }
       res.json({ success: true });
     } catch {
       res.status(500).json({ error: "Failed to logout" });
     }
   });
 
-  // ============ LIBRARY ENDPOINTS ============
+  // ============ PROTECTED ROUTES ============
 
   // Get liked songs
-  app.get("/api/songs/liked", async (req, res) => {
+  app.get("/api/songs/liked", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
+      const spotifyClient = createSpotifyClient(req);
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
       const tracks = await spotifyClient.getLikedSongs(limit);
       res.json(tracks);
@@ -386,9 +540,11 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     }
   });
 
-  // Get liked songs with genre info
-  app.get("/api/songs/liked/with-genres", async (req, res) => {
+  // Get liked songs with genres
+  app.get("/api/songs/liked/with-genres", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
+      const spotifyClient = createSpotifyClient(req);
+      const genreMatcher = new GenreMatcher(spotifyClient);
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
       const tracks = await spotifyClient.getLikedSongs(limit);
       const enriched = await genreMatcher.enrichTracksWithGenres(tracks);
@@ -398,11 +554,10 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     }
   });
 
-  // ============ PLAYLIST ENDPOINTS ============
-
-  // Get user playlists
-  app.get("/api/playlists", async (req, res) => {
+  // Get playlists
+  app.get("/api/playlists", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
+      const spotifyClient = createSpotifyClient(req);
       const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
       const playlists = await spotifyClient.getUserPlaylists(limit);
       res.json(playlists);
@@ -412,10 +567,12 @@ export async function createWebServer(clientId: string, port: number = 3001) {
   });
 
   // Get playlist tracks
-  app.get("/api/playlists/:id/tracks", async (req, res) => {
+  app.get("/api/playlists/:id/tracks", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
+      const spotifyClient = createSpotifyClient(req);
       const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
-      const tracks = await spotifyClient.getPlaylistTracks(req.params.id, limit);
+      const playlistId = req.params.id as string;
+      const tracks = await spotifyClient.getPlaylistTracks(playlistId, limit);
       res.json(tracks);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to fetch playlist tracks" });
@@ -423,37 +580,43 @@ export async function createWebServer(clientId: string, port: number = 3001) {
   });
 
   // Add tracks to playlist
-  app.post("/api/playlists/:id/tracks", async (req, res) => {
+  app.post("/api/playlists/:id/tracks", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
+      const spotifyClient = createSpotifyClient(req);
       const { trackIds } = req.body;
       if (!trackIds || !Array.isArray(trackIds)) {
         return res.status(400).json({ error: "trackIds array required" });
       }
+      const playlistId = req.params.id as string;
       const trackUris = trackIds.map((id: string) => `spotify:track:${id}`);
-      await spotifyClient.addTracksToPlaylist(req.params.id, trackUris);
+      await spotifyClient.addTracksToPlaylist(playlistId, trackUris);
       res.json({ success: true, added: trackIds.length });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to add tracks" });
     }
   });
 
-  // ============ MATCHING ENDPOINTS ============
-
-  // Match songs to playlists (filters out already-matched songs)
-  app.get("/api/match", async (req, res) => {
+  // Match songs
+  app.get("/api/match", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
-      const user = await spotifyClient.getCurrentUser();
+      const spotifyClient = createSpotifyClient(req);
+      const genreMatcher = new GenreMatcher(spotifyClient);
+
+      // Get user ID for PostgreSQL mode
+      let userId: string;
+      if (usePostgres && req.userId) {
+        userId = req.userId;
+      } else {
+        const user = await spotifyClient.getCurrentUser();
+        userId = user.id;
+      }
+
       const likedSongsLimit = Math.min(100, Math.max(1, parseInt(req.query.likedSongsLimit as string) || 20));
       const playlistLimit = Math.min(50, Math.max(1, parseInt(req.query.playlistLimit as string) || 10));
       const threshold = Math.min(1, Math.max(0, parseFloat(req.query.threshold as string) || 0.15));
 
-      // Get already matched track IDs
-      const matchedTrackIds = await matchHistoryStore.getMatchedTrackIds(user.id);
-
-      // Get match results, the genreMatcher will handle the matching
+      const matchedTrackIds = await matchHistoryStore.getMatchedTrackIds(userId);
       const result = await genreMatcher.matchSongsToPlaylists(likedSongsLimit, playlistLimit, threshold);
-
-      // Filter out already matched songs
       const newMatches = result.matches.filter(m => !matchedTrackIds.has(m.trackId));
 
       res.json({
@@ -466,10 +629,20 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     }
   });
 
-  // Auto-organize (preview or execute) - records matches to history
-  app.post("/api/organize", async (req, res) => {
+  // Auto-organize
+  app.post("/api/organize", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
-      const user = await spotifyClient.getCurrentUser();
+      const spotifyClient = createSpotifyClient(req);
+      const genreMatcher = new GenreMatcher(spotifyClient);
+
+      let userId: string;
+      if (usePostgres && req.userId) {
+        userId = req.userId;
+      } else {
+        const user = await spotifyClient.getCurrentUser();
+        userId = user.id;
+      }
+
       const {
         likedSongsLimit = 20,
         playlistLimit = 10,
@@ -477,9 +650,7 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         dryRun = true,
       } = req.body;
 
-      // Get already matched track IDs to filter them out
-      const matchedTrackIds = await matchHistoryStore.getMatchedTrackIds(user.id);
-
+      const matchedTrackIds = await matchHistoryStore.getMatchedTrackIds(userId);
       const result = await genreMatcher.autoOrganize(
         Math.min(100, Math.max(1, likedSongsLimit)),
         Math.min(50, Math.max(1, playlistLimit)),
@@ -487,10 +658,8 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         dryRun
       );
 
-      // Filter out already matched songs
       const newMatches = result.matches.filter(m => !matchedTrackIds.has(m.trackId));
 
-      // If not dry run, record the new matches to history
       if (!dryRun && newMatches.length > 0) {
         const matchRecords = newMatches.map(m => ({
           trackId: m.trackId,
@@ -500,7 +669,7 @@ export async function createWebServer(clientId: string, port: number = 3001) {
           playlistName: m.playlistName,
           matchedAt: Date.now(),
         }));
-        await matchHistoryStore.addMatches(user.id, matchRecords);
+        await matchHistoryStore.addMatches(userId, matchRecords);
       }
 
       res.json({
@@ -513,23 +682,37 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     }
   });
 
-  // ============ SETTINGS ENDPOINTS ============
-
-  // Get user settings
-  app.get("/api/settings", async (_req, res) => {
+  // Get settings
+  app.get("/api/settings", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
-      const user = await spotifyClient.getCurrentUser();
-      const settings = await settingsStore.getSettings(user.id);
+      let userId: string;
+      if (usePostgres && req.userId) {
+        userId = req.userId;
+      } else {
+        const spotifyClient = createSpotifyClient(req);
+        const user = await spotifyClient.getCurrentUser();
+        userId = user.id;
+      }
+
+      const settings = await settingsStore.getSettings(userId);
       res.json(settings);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to fetch settings" });
     }
   });
 
-  // Save user settings and schedule cron job
-  app.put("/api/settings", async (req, res) => {
+  // Save settings
+  app.put("/api/settings", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
-      const user = await spotifyClient.getCurrentUser();
+      let userId: string;
+      if (usePostgres && req.userId) {
+        userId = req.userId;
+      } else {
+        const spotifyClient = createSpotifyClient(req);
+        const user = await spotifyClient.getCurrentUser();
+        userId = user.id;
+      }
+
       const { songsToMatch, intervalDays, scheduleHours, scheduleMinutes } = req.body;
 
       const updates: Partial<UserSettings> = {};
@@ -538,14 +721,8 @@ export async function createWebServer(clientId: string, port: number = 3001) {
       if (typeof scheduleHours === "number") updates.scheduleHours = scheduleHours;
       if (typeof scheduleMinutes === "number") updates.scheduleMinutes = scheduleMinutes;
 
-      const settings = await settingsStore.saveSettings(user.id, updates);
-
-      // Schedule/update the cron job for this user
-      const job = await schedulerStore.scheduleJob(
-        user.id,
-        settings.intervalDays,
-        settings.scheduleHours
-      );
+      const settings = await settingsStore.saveSettings(userId, updates);
+      const job = await schedulerStore.scheduleJob(userId, settings.intervalDays, settings.scheduleHours);
 
       res.json({
         ...settings,
@@ -556,47 +733,70 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     }
   });
 
-  // Get match history for current user
-  app.get("/api/match-history", async (_req, res) => {
+  // Get match history
+  app.get("/api/match-history", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
-      const user = await spotifyClient.getCurrentUser();
-      const history = await matchHistoryStore.getHistory(user.id);
+      let userId: string;
+      if (usePostgres && req.userId) {
+        userId = req.userId;
+      } else {
+        const spotifyClient = createSpotifyClient(req);
+        const user = await spotifyClient.getCurrentUser();
+        userId = user.id;
+      }
+
+      const history = await matchHistoryStore.getHistory(userId);
       res.json(history);
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to fetch match history" });
     }
   });
 
-  // Get scheduled job info for current user
-  app.get("/api/schedule", async (_req, res) => {
+  // Get schedule
+  app.get("/api/schedule", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
-      const user = await spotifyClient.getCurrentUser();
-      const job = await schedulerStore.getJob(user.id);
+      let userId: string;
+      if (usePostgres && req.userId) {
+        userId = req.userId;
+      } else {
+        const spotifyClient = createSpotifyClient(req);
+        const user = await spotifyClient.getCurrentUser();
+        userId = user.id;
+      }
+
+      const job = await schedulerStore.getJob(userId);
       res.json(job || { enabled: false });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to fetch schedule" });
     }
   });
 
-  // Trigger manual sync now
-  app.post("/api/sync-now", async (_req, res) => {
+  // Sync now
+  app.post("/api/sync-now", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
-      const user = await spotifyClient.getCurrentUser();
-      const settings = await settingsStore.getSettings(user.id);
-      const matchedTrackIds = await matchHistoryStore.getMatchedTrackIds(user.id);
+      const spotifyClient = createSpotifyClient(req);
+      const genreMatcher = new GenreMatcher(spotifyClient);
 
-      // Run the matching
+      let userId: string;
+      if (usePostgres && req.userId) {
+        userId = req.userId;
+      } else {
+        const user = await spotifyClient.getCurrentUser();
+        userId = user.id;
+      }
+
+      const settings = await settingsStore.getSettings(userId);
+      const matchedTrackIds = await matchHistoryStore.getMatchedTrackIds(userId);
+
       const result = await genreMatcher.autoOrganize(
         settings.songsToMatch,
-        50, // playlistLimit
-        0.15, // threshold
-        false // dryRun = false, actually add tracks
+        50,
+        0.15,
+        false
       );
 
-      // Filter out already matched songs
       const newMatches = result.matches.filter((m) => !matchedTrackIds.has(m.trackId));
 
-      // Record the new matches to history
       if (newMatches.length > 0) {
         const matchRecords = newMatches.map((m) => ({
           trackId: m.trackId,
@@ -606,7 +806,7 @@ export async function createWebServer(clientId: string, port: number = 3001) {
           playlistName: m.playlistName,
           matchedAt: Date.now(),
         }));
-        await matchHistoryStore.addMatches(user.id, matchRecords);
+        await matchHistoryStore.addMatches(userId, matchRecords);
       }
 
       res.json({
@@ -620,33 +820,36 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     }
   });
 
-  // ============ TRACK MANAGEMENT ENDPOINTS ============
-
-  // Move track between playlists (or just remove from playlist)
-  app.post("/api/playlists/move-track", async (req, res) => {
+  // Move track
+  app.post("/api/playlists/move-track", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
-      const user = await spotifyClient.getCurrentUser();
+      const spotifyClient = createSpotifyClient(req);
+
+      let userId: string;
+      if (usePostgres && req.userId) {
+        userId = req.userId;
+      } else {
+        const user = await spotifyClient.getCurrentUser();
+        userId = user.id;
+      }
+
       const { trackId, fromPlaylistId, toPlaylistId } = req.body;
 
       if (!trackId) {
         return res.status(400).json({ error: "trackId required" });
       }
 
-      // Must have at least one playlist to act on
       if (!fromPlaylistId && !toPlaylistId) {
         return res.status(400).json({ error: "At least one of fromPlaylistId or toPlaylistId required" });
       }
 
       const trackUri = `spotify:track:${trackId}`;
 
-      // Remove from source playlist if specified
       if (fromPlaylistId) {
         await spotifyClient.removeTracksFromPlaylist(fromPlaylistId, [trackUri]);
-        // Also remove from match history so it can be re-matched in the future
-        await matchHistoryStore.removeMatch(user.id, trackId);
+        await matchHistoryStore.removeMatch(userId, trackId);
       }
 
-      // Add to destination playlist if specified
       if (toPlaylistId) {
         await spotifyClient.addTracksToPlaylist(toPlaylistId, [trackUri]);
       }
@@ -660,14 +863,14 @@ export async function createWebServer(clientId: string, port: number = 3001) {
   return { app, schedulerStore };
 }
 
-// Export CronRunner for external use
+// Export CronRunner
 export { CronRunner } from "./scheduler/cron-runner.js";
 
-// CLI entry point for web server
+// CLI entry point
 if (import.meta.url === `file://${process.argv[1]}`) {
   const clientId = process.env.SPOTIFY_CLIENT_ID;
   const port = parseInt(process.env.PORT || "3001");
-  const enableCron = process.env.ENABLE_CRON !== "false"; // Enabled by default
+  const enableCron = process.env.ENABLE_CRON !== "false";
 
   if (!clientId) {
     console.error("Error: SPOTIFY_CLIENT_ID environment variable is required");
@@ -675,12 +878,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
 
   createWebServer(clientId, port).then(({ app }) => {
-    // Import and start cron runner if enabled
     if (enableCron) {
       import("./scheduler/cron-runner.js").then(({ CronRunner }) => {
         const cronRunner = new CronRunner({
           clientId,
-          checkIntervalMs: 60000, // Check every minute
+          checkIntervalMs: 60000,
           onJobStart: (job) => {
             console.log(`[Cron] Starting job for user ${job.userId}`);
           },
@@ -705,7 +907,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       if (enableCron) {
         console.log("Cron runner: enabled (checking every minute)");
       } else {
-        console.log("Cron runner: disabled (set ENABLE_CRON=true to enable)");
+        console.log("Cron runner: disabled");
       }
     });
   }).catch((err) => {
