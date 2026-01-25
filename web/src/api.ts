@@ -1,4 +1,18 @@
 const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:3001/api";
+const SESSION_STORAGE_KEY = "sortify_session";
+
+// Session management
+export function getStoredSession(): string | null {
+  return localStorage.getItem(SESSION_STORAGE_KEY);
+}
+
+export function setStoredSession(sessionId: string): void {
+  localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+}
+
+export function clearStoredSession(): void {
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+}
 
 // ============ TYPES ============
 
@@ -106,13 +120,21 @@ export interface ScheduledJob {
 // ============ API FUNCTIONS ============
 
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string>),
+  };
+
+  // Add Authorization header if we have a stored session
+  const sessionId = getStoredSession();
+  if (sessionId) {
+    headers["Authorization"] = `Bearer ${sessionId}`;
+  }
+
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
+    credentials: "include", // Keep for backwards compatibility
+    headers,
   });
 
   if (!response.ok) {
@@ -132,8 +154,8 @@ export async function getAuthStatus(): Promise<AuthStatus> {
   return fetchApi("/auth/status");
 }
 
-export async function setSession(sessionId: string): Promise<{ success: boolean }> {
-  return fetchApi("/auth/set-session", {
+export async function validateSession(sessionId: string): Promise<{ success: boolean; userId: string }> {
+  return fetchApi("/auth/validate-session", {
     method: "POST",
     body: JSON.stringify({ sessionId }),
   });
@@ -141,6 +163,7 @@ export async function setSession(sessionId: string): Promise<{ success: boolean 
 
 export async function logout(): Promise<void> {
   await fetchApi("/auth/logout", { method: "POST" });
+  clearStoredSession();
 }
 
 // Songs

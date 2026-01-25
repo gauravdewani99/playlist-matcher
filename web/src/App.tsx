@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getAuthStatus, getAuthUrl, logout, setSession } from "./api";
+import { getAuthStatus, getAuthUrl, logout, validateSession, setStoredSession } from "./api";
 import type { AuthStatus } from "./api";
 import { Home } from "./components/Home";
 import { NewDashboard } from "./components/NewDashboard";
@@ -36,12 +36,13 @@ function App() {
     }
 
     if (authResult === "success" && sessionToken) {
-      // Set the session cookie via API call
+      // Validate and store the session token
       try {
-        await setSession(sessionToken);
-        console.log("[Auth] Session cookie established");
+        await validateSession(sessionToken);
+        setStoredSession(sessionToken);
+        console.log("[Auth] Session stored in localStorage");
       } catch (err) {
-        console.error("[Auth] Failed to set session:", err);
+        console.error("[Auth] Failed to validate session:", err);
         setError("Failed to complete authentication");
         setLoading(false);
         return;

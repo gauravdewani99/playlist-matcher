@@ -273,12 +273,23 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     }, 60000);
   }
 
+  // Helper to extract session ID from request (cookie or Authorization header)
+  const getSessionIdFromRequest = (req: AuthenticatedRequest): string | null => {
+    // First try Authorization header (preferred for cross-origin)
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      return authHeader.substring(7);
+    }
+    // Fall back to cookie
+    return req.cookies[SESSION_COOKIE_NAME] || null;
+  };
+
   // Authentication middleware for protected routes
   const requireAuth = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       if (usePostgres && sessionStore && pgTokenStore) {
-        // PostgreSQL mode: use session cookie
-        const sessionId = req.cookies[SESSION_COOKIE_NAME];
+        // PostgreSQL mode: use session from header or cookie
+        const sessionId = getSessionIdFromRequest(req);
 
         if (!sessionId) {
           return res.status(401).json({ error: "Not authenticated" });
@@ -286,8 +297,6 @@ export async function createWebServer(clientId: string, port: number = 3001) {
 
         const session = await sessionStore.getSession(sessionId);
         if (!session) {
-          // Clear invalid cookie
-          res.clearCookie(SESSION_COOKIE_NAME);
           return res.status(401).json({ error: "Session expired" });
         }
 
@@ -301,7 +310,6 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         } catch {
           // Token refresh failed, session is invalid
           await sessionStore.deleteSession(sessionId);
-          res.clearCookie(SESSION_COOKIE_NAME);
           return res.status(401).json({ error: "Token expired" });
         }
 
@@ -468,19 +476,17 @@ export async function createWebServer(clientId: string, port: number = 3001) {
   app.get("/api/auth/status", async (req: AuthenticatedRequest, res) => {
     try {
       if (usePostgres && sessionStore && pgTokenStore) {
-        const sessionId = req.cookies[SESSION_COOKIE_NAME];
-        console.log(`[Auth] Status check - sessionId from cookie: ${sessionId ? sessionId.substring(0, 8) + "..." : "none"}`);
-        console.log(`[Auth] All cookies:`, Object.keys(req.cookies));
+        const sessionId = getSessionIdFromRequest(req);
+        console.log(`[Auth] Status check - sessionId: ${sessionId ? sessionId.substring(0, 8) + "..." : "none"}`);
 
         if (!sessionId) {
-          console.log("[Auth] No session cookie found");
+          console.log("[Auth] No session found");
           return res.json({ authenticated: false });
         }
 
         const session = await sessionStore.getSession(sessionId);
         if (!session) {
           console.log("[Auth] Session not found in database or expired");
-          res.clearCookie(SESSION_COOKIE_NAME);
           return res.json({ authenticated: false });
         }
 
@@ -500,7 +506,6 @@ export async function createWebServer(clientId: string, port: number = 3001) {
           // Token invalid, clear session
           console.log(`[Auth] Token invalid for user ${session.userId}:`, err);
           await sessionStore.deleteSession(sessionId);
-          res.clearCookie(SESSION_COOKIE_NAME);
           res.json({ authenticated: false });
         }
       } else {
@@ -524,8 +529,8 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     }
   });
 
-  // Set session cookie (called by frontend after OAuth redirect)
-  app.post("/api/auth/set-session", async (req: AuthenticatedRequest, res) => {
+  // Validate session (called by frontend after OAuth redirect)
+  app.post("/api/auth/validate-session", async (req: AuthenticatedRequest, res) => {
     try {
       const { sessionId } = req.body;
 
@@ -539,20 +544,11 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         return res.status(401).json({ error: "Invalid session" });
       }
 
-      // Set the session cookie
-      const isProduction = !!process.env.RAILWAY_PUBLIC_DOMAIN;
-      res.cookie(SESSION_COOKIE_NAME, sessionId, {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      });
-
-      console.log(`[Auth] Session cookie set for user ${session.userId}`);
-      res.json({ success: true });
+      console.log(`[Auth] Session validated for user ${session.userId}`);
+      res.json({ success: true, userId: session.userId });
     } catch (error) {
-      console.error("[Auth] Set session error:", error);
-      res.status(500).json({ error: "Failed to set session" });
+      console.error("[Auth] Validate session error:", error);
+      res.status(500).json({ error: "Failed to validate session" });
     }
   });
 
@@ -560,15 +556,10 @@ export async function createWebServer(clientId: string, port: number = 3001) {
   app.post("/api/auth/logout", async (req: AuthenticatedRequest, res) => {
     try {
       if (usePostgres && sessionStore) {
-        const sessionId = req.cookies[SESSION_COOKIE_NAME];
+        const sessionId = getSessionIdFromRequest(req);
         if (sessionId) {
           await sessionStore.deleteSession(sessionId);
         }
-        res.clearCookie(SESSION_COOKIE_NAME, {
-          httpOnly: true,
-          secure: !!process.env.RAILWAY_PUBLIC_DOMAIN,
-          sameSite: process.env.RAILWAY_PUBLIC_DOMAIN ? "none" : "lax",
-        });
       } else {
         await tokenStore.clearTokens();
       }
