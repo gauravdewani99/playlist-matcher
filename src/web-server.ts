@@ -469,16 +469,22 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     try {
       if (usePostgres && sessionStore && pgTokenStore) {
         const sessionId = req.cookies[SESSION_COOKIE_NAME];
+        console.log(`[Auth] Status check - sessionId from cookie: ${sessionId ? sessionId.substring(0, 8) + "..." : "none"}`);
+        console.log(`[Auth] All cookies:`, Object.keys(req.cookies));
 
         if (!sessionId) {
+          console.log("[Auth] No session cookie found");
           return res.json({ authenticated: false });
         }
 
         const session = await sessionStore.getSession(sessionId);
         if (!session) {
+          console.log("[Auth] Session not found in database or expired");
           res.clearCookie(SESSION_COOKIE_NAME);
           return res.json({ authenticated: false });
         }
+
+        console.log(`[Auth] Session valid for user: ${session.userId}`);
 
         // Get user info
         const oauth = new RequestScopedOAuth(clientId, pgTokenStore, session.userId);
@@ -488,9 +494,11 @@ export async function createWebServer(clientId: string, port: number = 3001) {
           const client = new SpotifyClient(tempOauth as any);
           const user = await client.getCurrentUser();
 
+          console.log(`[Auth] User authenticated: ${user.id}`);
           res.json({ authenticated: true, user });
-        } catch {
+        } catch (err) {
           // Token invalid, clear session
+          console.log(`[Auth] Token invalid for user ${session.userId}:`, err);
           await sessionStore.deleteSession(sessionId);
           res.clearCookie(SESSION_COOKIE_NAME);
           res.json({ authenticated: false });
