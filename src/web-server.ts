@@ -219,8 +219,9 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     frontendUrl,
   ].filter(Boolean);
 
-  console.log("Allowed CORS origins:", allowedOrigins);
+  console.log("Allowed CORS origins:", JSON.stringify(allowedOrigins));
   console.log("Frontend URL:", frontendUrl);
+  console.log("FRONTEND_URL env:", process.env.FRONTEND_URL);
 
   // Middleware
   app.use(cors({
@@ -229,10 +230,15 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         callback(null, true);
         return;
       }
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
+      // Normalize origins for comparison (remove trailing slash, lowercase)
+      const normalizedOrigin = origin.toLowerCase().replace(/\/$/, "");
+      const normalizedAllowed = allowedOrigins.map(o => o.toLowerCase().replace(/\/$/, ""));
+
+      if (normalizedAllowed.includes(normalizedOrigin)) {
+        // Return the actual origin (not normalized) for proper CORS headers
+        callback(null, origin);
       } else {
-        console.log(`CORS blocked origin: ${origin}`);
+        console.log(`CORS blocked origin: ${origin}, allowed: ${allowedOrigins.join(", ")}`);
         callback(null, false);
       }
     },
