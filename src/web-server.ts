@@ -425,25 +425,34 @@ export async function createWebServer(clientId: string, port: number = 3001) {
 
       if (usePostgres && pgTokenStore && sessionStore) {
         // Get user ID from Spotify
+        console.log("[Auth] Getting user info from Spotify...");
         const tempOauth = new TempOAuth(tokens.access_token);
         const tempClient = new SpotifyClient(tempOauth as any);
         const user = await tempClient.getCurrentUser();
+        console.log(`[Auth] Got user: ${user.id}`);
 
         // Save tokens to database with user ID
+        console.log("[Auth] Saving tokens to database...");
         await pgTokenStore.saveTokens(tokenData, user.id);
+        console.log("[Auth] Tokens saved");
 
         // Create session
+        console.log("[Auth] Creating session...");
         const session = await sessionStore.createSession(user.id);
+        console.log(`[Auth] Session created: ${session.sessionId.substring(0, 8)}...`);
 
         // Set session cookie
+        // Use secure cookies when deployed (Railway sets RAILWAY_PUBLIC_DOMAIN)
+        const isProduction = !!process.env.RAILWAY_PUBLIC_DOMAIN;
+        console.log(`[Auth] Setting cookie (secure=${isProduction}, sameSite=${isProduction ? "none" : "lax"})`);
         res.cookie(SESSION_COOKIE_NAME, session.sessionId, {
           httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+          secure: isProduction,
+          sameSite: isProduction ? "none" : "lax",
           maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         });
 
-        console.log(`[Auth] User ${user.id} logged in, session created`);
+        console.log(`[Auth] User ${user.id} logged in successfully`);
       } else {
         // File-based mode: just save tokens
         await tokenStore.saveTokens(tokenData);

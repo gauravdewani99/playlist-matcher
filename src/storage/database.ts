@@ -97,9 +97,15 @@ export async function initializeDatabase(): Promise<void> {
       session_id VARCHAR(64) PRIMARY KEY,
       user_id VARCHAR(255) NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      expires_at TIMESTAMP NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES user_tokens(user_id) ON DELETE CASCADE
+      expires_at TIMESTAMP NOT NULL
     );
+
+    -- Drop foreign key constraint if it exists (migration from previous schema)
+    DO $$ BEGIN
+      ALTER TABLE user_sessions DROP CONSTRAINT IF EXISTS user_sessions_user_id_fkey;
+    EXCEPTION
+      WHEN undefined_table THEN NULL;
+    END $$;
 
     -- Index for session cleanup
     CREATE INDEX IF NOT EXISTS idx_sessions_expires ON user_sessions(expires_at);
