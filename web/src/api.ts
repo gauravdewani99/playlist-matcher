@@ -132,6 +132,13 @@ export async function getAuthStatus(): Promise<AuthStatus> {
   return fetchApi("/auth/status");
 }
 
+export async function setSession(sessionId: string): Promise<{ success: boolean }> {
+  return fetchApi("/auth/set-session", {
+    method: "POST",
+    body: JSON.stringify({ sessionId }),
+  });
+}
+
 export async function logout(): Promise<void> {
   await fetchApi("/auth/logout", { method: "POST" });
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getAuthStatus, getAuthUrl, logout } from "./api";
+import { getAuthStatus, getAuthUrl, logout, setSession } from "./api";
 import type { AuthStatus } from "./api";
 import { Home } from "./components/Home";
 import { NewDashboard } from "./components/NewDashboard";
@@ -14,23 +14,43 @@ function App() {
   const [view, setView] = useState<View>("home");
 
   useEffect(() => {
-    checkAuth();
+    handleAuthCallback();
+  }, []);
 
+  async function handleAuthCallback() {
     // Check for auth callback params
     const params = new URLSearchParams(window.location.search);
     const authResult = params.get("auth");
     const authError = params.get("error");
+    const sessionToken = params.get("session");
 
-    if (authResult === "success") {
-      // Clear URL params and refresh auth status
+    // Clear URL params immediately
+    if (authResult || authError || sessionToken) {
       window.history.replaceState({}, "", window.location.pathname);
-      checkAuth();
-    } else if (authError) {
-      setError(`Authentication failed: ${authError}`);
-      window.history.replaceState({}, "", window.location.pathname);
-      setLoading(false);
     }
-  }, []);
+
+    if (authError) {
+      setError(`Authentication failed: ${authError}`);
+      setLoading(false);
+      return;
+    }
+
+    if (authResult === "success" && sessionToken) {
+      // Set the session cookie via API call
+      try {
+        await setSession(sessionToken);
+        console.log("[Auth] Session cookie established");
+      } catch (err) {
+        console.error("[Auth] Failed to set session:", err);
+        setError("Failed to complete authentication");
+        setLoading(false);
+        return;
+      }
+    }
+
+    // Check auth status
+    checkAuth();
+  }
 
   async function checkAuth() {
     try {

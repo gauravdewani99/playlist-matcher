@@ -441,18 +441,11 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         const session = await sessionStore.createSession(user.id);
         console.log(`[Auth] Session created: ${session.sessionId.substring(0, 8)}...`);
 
-        // Set session cookie
-        // Use secure cookies when deployed (Railway sets RAILWAY_PUBLIC_DOMAIN)
-        const isProduction = !!process.env.RAILWAY_PUBLIC_DOMAIN;
-        console.log(`[Auth] Setting cookie (secure=${isProduction}, sameSite=${isProduction ? "none" : "lax"})`);
-        res.cookie(SESSION_COOKIE_NAME, session.sessionId, {
-          httpOnly: true,
-          secure: isProduction,
-          sameSite: isProduction ? "none" : "lax",
-          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-        });
-
+        // For cross-origin setup (Vercel frontend + Railway backend),
+        // pass session token in URL for frontend to store
+        // Frontend will call /api/auth/set-session to establish the cookie
         console.log(`[Auth] User ${user.id} logged in successfully`);
+        return res.redirect(`${frontendUrl}?auth=success&session=${session.sessionId}`);
       } else {
         // File-based mode: just save tokens
         await tokenStore.saveTokens(tokenData);
@@ -517,6 +510,38 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     }
   });
 
+  // Set session cookie (called by frontend after OAuth redirect)
+  app.post("/api/auth/set-session", async (req: AuthenticatedRequest, res) => {
+    try {
+      const { sessionId } = req.body;
+
+      if (!sessionId || !usePostgres || !sessionStore) {
+        return res.status(400).json({ error: "Invalid request" });
+      }
+
+      // Verify session exists and is valid
+      const session = await sessionStore.getSession(sessionId);
+      if (!session) {
+        return res.status(401).json({ error: "Invalid session" });
+      }
+
+      // Set the session cookie
+      const isProduction = !!process.env.RAILWAY_PUBLIC_DOMAIN;
+      res.cookie(SESSION_COOKIE_NAME, sessionId, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "none" : "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
+
+      console.log(`[Auth] Session cookie set for user ${session.userId}`);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("[Auth] Set session error:", error);
+      res.status(500).json({ error: "Failed to set session" });
+    }
+  });
+
   // Logout
   app.post("/api/auth/logout", async (req: AuthenticatedRequest, res) => {
     try {
@@ -525,7 +550,11 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         if (sessionId) {
           await sessionStore.deleteSession(sessionId);
         }
-        res.clearCookie(SESSION_COOKIE_NAME);
+        res.clearCookie(SESSION_COOKIE_NAME, {
+          httpOnly: true,
+          secure: !!process.env.RAILWAY_PUBLIC_DOMAIN,
+          sameSite: process.env.RAILWAY_PUBLIC_DOMAIN ? "none" : "lax",
+        });
       } else {
         await tokenStore.clearTokens();
       }
