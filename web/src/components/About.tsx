@@ -133,7 +133,7 @@ export function About({ onBack }: AboutProps) {
         </section>
 
         <footer className="about-footer">
-          <p>Built with 💚 for music lovers</p>
+          <p>© 2026 Sortify</p>
         </footer>
       </main>
     </div>

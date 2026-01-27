@@ -13,9 +13,9 @@ interface HomeProps {
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
-  songsToMatch: 20,
-  intervalDays: 7,
-  scheduleHours: 9,
+  songsToMatch: 10,
+  intervalDays: 1,
+  scheduleHours: 0,
   scheduleMinutes: 0,
   lastUpdated: 0,
 };
@@ -271,8 +271,8 @@ export function Home({ user, onViewDashboard, onLogout, onLogin, onAbout }: Home
               </button>
 
               <p className="settings-summary">
-                Your {settings.songsToMatch} most recent liked {settings.songsToMatch === 1 ? "song" : "songs"} will be matched to your playlists
-                every {settings.intervalDays} {settings.intervalDays === 1 ? "day" : "days"} at {formatHourAmPm(settings.scheduleHours)}
+                Your {settings.songsToMatch} most recent liked {settings.songsToMatch === 1 ? "song" : "songs"} will be matched to your playlists{" "}
+                {settings.intervalDays === 1 ? "everyday" : `every ${settings.intervalDays} days`} at {formatHourAmPm(settings.scheduleHours)}.
               </p>
             </>
           )}

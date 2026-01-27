@@ -461,7 +461,7 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
       </main>
 
       <footer className="dashboard-footer">
-        <span>© 2025 Sortify. All rights reserved.</span>
+        <span>© 2026 Sortify</span>
       </footer>
 
       {/* Unmatch Modal */}
