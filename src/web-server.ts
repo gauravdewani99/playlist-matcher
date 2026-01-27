@@ -348,6 +348,30 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     });
   });
 
+  // Debug endpoint to check user data (temporary)
+  app.get("/api/debug/user/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      const settings = await settingsStore.getSettings(userId);
+      const history = await matchHistoryStore.getHistory(userId);
+      const job = await schedulerStore.getJob(userId);
+
+      res.json({
+        userId,
+        settings,
+        matchHistory: {
+          totalMatches: history.matches.length,
+          lastMatchRun: history.lastMatchRun,
+          recentMatches: history.matches.slice(0, 10),
+        },
+        scheduledJob: job,
+      });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to get user data" });
+    }
+  });
+
   // ============ AUTH ENDPOINTS ============
 
   // Get auth URL
