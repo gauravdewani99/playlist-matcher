@@ -325,6 +325,11 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* Mobile hide helper */
+.mobile-hide {
+  display: inline;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .home-header {
@@ -341,6 +346,8 @@
 
   .home-main {
     padding: var(--spacing-md);
+    align-items: flex-start;
+    padding-top: var(--spacing-xl);
   }
 
   .settings-card {
@@ -355,22 +362,92 @@
     font-size: var(--font-size-sm);
   }
 
+  .settings-rhythm {
+    margin-bottom: var(--spacing-lg);
+  }
+
+  .settings-rows {
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .settings-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .row-text {
+    font-size: var(--font-size-base);
+    white-space: nowrap;
+  }
+
+  /* Hide "o'clock" on mobile since wheel picker shows AM/PM */
+  .mobile-hide {
+    display: none;
+  }
+
+  .save-btn {
+    padding: var(--spacing-md) var(--spacing-xl);
+    font-size: var(--font-size-base);
+    min-width: 200px;
+  }
+
+  .sync-status {
+    flex-direction: row;
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+
+  .sync-status-divider {
+    width: 1px;
+    height: 32px;
+  }
+
+  .sync-status-label {
+    font-size: 10px;
+  }
+
+  .sync-status-value {
+    font-size: var(--font-size-xs);
+  }
+}
+
+@media (max-width: 480px) {
+  .home-main {
+    padding: var(--spacing-sm);
+    padding-top: var(--spacing-lg);
+  }
+
+  .settings-card {
+    padding: var(--spacing-lg) var(--spacing-md);
+  }
+
+  .save-btn {
+    width: 100%;
+  }
+
+  .nav-btn {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: var(--font-size-xs);
+  }
+
+  .settings-subtitle {
+    font-size: var(--font-size-sm);
+  }
+
   .settings-rows {
     gap: var(--spacing-md);
   }
 
   .settings-row {
-    gap: var(--spacing-sm);
+    gap: var(--spacing-xs);
   }
 
   .row-text {
     font-size: var(--font-size-sm);
-  }
-
-  .save-btn {
-    padding: var(--spacing-sm) var(--spacing-xl);
-    font-size: var(--font-size-sm);
-    min-width: 160px;
   }
 
   .sync-status {
@@ -384,32 +461,17 @@
   }
 }
 
-@media (max-width: 480px) {
-  .save-btn {
-    width: 100%;
-  }
-
-  .nav-btn {
-    padding: var(--spacing-xs) var(--spacing-sm);
-    font-size: var(--font-size-xs);
-  }
-
-  .settings-subtitle {
-    font-size: var(--font-size-xs);
-  }
-
-  .settings-row {
-    grid-template-columns: auto auto auto;
-    justify-content: center;
-  }
-}
-
 @media (max-width: 375px) {
   .settings-card {
-    padding: var(--spacing-lg) var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-sm);
   }
 
   .settings-title {
     font-size: var(--font-size-xl);
+  }
+
+  .settings-title-icon {
+    width: 36px;
+    height: 36px;
   }
 }

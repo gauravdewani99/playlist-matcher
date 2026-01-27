@@ -16,6 +16,7 @@ interface PlaylistGroup {
   playlistId: string;
   playlistName: string;
   tracks: MatchRecord[];
+  mostRecentMatch: number;
 }
 
 interface SyncGroup {
@@ -320,12 +321,19 @@ export function NewDashboard({ user, onBack, onLogout, onAbout }: DashboardProps
           playlistId: match.playlistId,
           playlistName: match.playlistName,
           tracks: [],
+          mostRecentMatch: match.matchedAt,
         });
       }
-      groups.get(match.playlistId)!.tracks.push(match);
+      const group = groups.get(match.playlistId)!;
+      group.tracks.push(match);
+      // Track the most recent match for this playlist
+      if (match.matchedAt > group.mostRecentMatch) {
+        group.mostRecentMatch = match.matchedAt;
+      }
     }
 
-    return Array.from(groups.values()).sort((a, b) => b.tracks.length - a.tracks.length);
+    // Sort by most recent match (newest first)
+    return Array.from(groups.values()).sort((a, b) => b.mostRecentMatch - a.mostRecentMatch);
   }
 
   function openTrackInSpotify(trackId: string) {

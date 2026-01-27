@@ -1,8 +1,27 @@
 import { useState, useEffect } from "react";
 import { Stepper, HourStepper } from "./Stepper";
+import { WheelPicker, HourWheelPicker } from "./WheelPicker";
 import { getSettings, saveSettings as saveSettingsApi, getSchedule, getMatchHistory } from "../api";
 import type { SpotifyUser, UserSettings, ScheduledJob } from "../api";
 import "./Home.css";
+
+// Hook to detect mobile viewport
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth <= breakpoint : false
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= breakpoint);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [breakpoint]);
+
+  return isMobile;
+}
 
 interface HomeProps {
   user: SpotifyUser | null;
@@ -35,6 +54,7 @@ export function Home({ user, onViewDashboard, onLogout, onLogin, onAbout }: Home
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!!user);
   const [countdown, setCountdown] = useState<string>("");
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (user) {
@@ -215,33 +235,60 @@ export function Home({ user, onViewDashboard, onLogout, onLogin, onAbout }: Home
               <div className="settings-rows">
                 <div className="settings-row">
                   <span className="row-text">Match my last</span>
-                  <Stepper
-                    value={settings.songsToMatch}
-                    min={1}
-                    max={100}
-                    onChange={(v) => updateSetting("songsToMatch", v)}
-                  />
+                  {isMobile ? (
+                    <WheelPicker
+                      value={settings.songsToMatch}
+                      min={1}
+                      max={100}
+                      onChange={(v) => updateSetting("songsToMatch", v)}
+                      label="Songs to Match"
+                    />
+                  ) : (
+                    <Stepper
+                      value={settings.songsToMatch}
+                      min={1}
+                      max={100}
+                      onChange={(v) => updateSetting("songsToMatch", v)}
+                    />
+                  )}
                   <span className="row-text">{settings.songsToMatch === 1 ? "liked song" : "liked songs"}</span>
                 </div>
 
                 <div className="settings-row">
                   <span className="row-text">every</span>
-                  <Stepper
-                    value={settings.intervalDays}
-                    min={1}
-                    max={100}
-                    onChange={(v) => updateSetting("intervalDays", v)}
-                  />
+                  {isMobile ? (
+                    <WheelPicker
+                      value={settings.intervalDays}
+                      min={1}
+                      max={100}
+                      onChange={(v) => updateSetting("intervalDays", v)}
+                      label="Interval"
+                    />
+                  ) : (
+                    <Stepper
+                      value={settings.intervalDays}
+                      min={1}
+                      max={100}
+                      onChange={(v) => updateSetting("intervalDays", v)}
+                    />
+                  )}
                   <span className="row-text">{settings.intervalDays === 1 ? "day" : "days"}</span>
                 </div>
 
                 <div className="settings-row">
                   <span className="row-text">at</span>
-                  <HourStepper
-                    value={settings.scheduleHours}
-                    onChange={(v) => updateSetting("scheduleHours", v)}
-                  />
-                  <span className="row-text">o'clock</span>
+                  {isMobile ? (
+                    <HourWheelPicker
+                      value={settings.scheduleHours}
+                      onChange={(v) => updateSetting("scheduleHours", v)}
+                    />
+                  ) : (
+                    <HourStepper
+                      value={settings.scheduleHours}
+                      onChange={(v) => updateSetting("scheduleHours", v)}
+                    />
+                  )}
+                  <span className="row-text mobile-hide">o'clock</span>
                 </div>
               </div>
 
