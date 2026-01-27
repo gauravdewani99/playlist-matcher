@@ -70,6 +70,14 @@ export class MatchHistoryStore {
     await this.saveAllHistory(allHistory);
   }
 
+  async updateLastMatchRun(userId: string): Promise<void> {
+    const allHistory = await this.getAllHistory();
+    const userHistory = allHistory[userId] || { matches: [], lastMatchRun: 0 };
+    userHistory.lastMatchRun = Date.now();
+    allHistory[userId] = userHistory;
+    await this.saveAllHistory(allHistory);
+  }
+
   private async getAllHistory(): Promise<Record<string, UserMatchHistory>> {
     try {
       const data = await fs.readFile(this.historyPath, "utf-8");

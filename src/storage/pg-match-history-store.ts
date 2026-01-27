@@ -104,4 +104,16 @@ export class PgMatchHistoryStore {
     await pool.query(`DELETE FROM match_history WHERE user_id = $1`, [userId]);
     await pool.query(`DELETE FROM user_match_runs WHERE user_id = $1`, [userId]);
   }
+
+  async updateLastMatchRun(userId: string): Promise<void> {
+    const pool = getPool();
+    await pool.query(
+      `INSERT INTO user_match_runs (user_id, last_match_run, updated_at)
+       VALUES ($1, $2, CURRENT_TIMESTAMP)
+       ON CONFLICT (user_id) DO UPDATE SET
+         last_match_run = EXCLUDED.last_match_run,
+         updated_at = CURRENT_TIMESTAMP`,
+      [userId, Date.now()]
+    );
+  }
 }

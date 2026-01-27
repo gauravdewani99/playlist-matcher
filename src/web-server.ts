@@ -82,6 +82,7 @@ interface IMatchHistoryStore {
   addMatches(userId: string, matches: any[]): Promise<void>;
   removeMatch(userId: string, trackId: string): Promise<void>;
   getMatchedTrackIds(userId: string): Promise<Set<string>>;
+  updateLastMatchRun(userId: string): Promise<void>;
 }
 
 // Common scheduler store interface
@@ -852,8 +853,13 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         userId = user.id;
       }
 
+      console.log(`[Sync] Starting sync for user ${userId}`);
+
       const settings = await settingsStore.getSettings(userId);
+      console.log(`[Sync] Settings: songsToMatch=${settings.songsToMatch}`);
+
       const matchedTrackIds = await matchHistoryStore.getMatchedTrackIds(userId);
+      console.log(`[Sync] Already matched: ${matchedTrackIds.size} tracks`);
 
       const result = await genreMatcher.autoOrganize(
         settings.songsToMatch,
@@ -862,7 +868,10 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         false
       );
 
+      console.log(`[Sync] autoOrganize result: ${result.matches.length} matches, ${result.unmatched.length} unmatched`);
+
       const newMatches = result.matches.filter((m) => !matchedTrackIds.has(m.trackId));
+      console.log(`[Sync] New matches (after filtering): ${newMatches.length}`);
 
       if (newMatches.length > 0) {
         const matchRecords = newMatches.map((m) => ({
@@ -874,7 +883,12 @@ export async function createWebServer(clientId: string, port: number = 3001) {
           matchedAt: Date.now(),
         }));
         await matchHistoryStore.addMatches(userId, matchRecords);
+        console.log(`[Sync] Saved ${matchRecords.length} match records to database`);
       }
+
+      // Update last match run timestamp
+      await matchHistoryStore.updateLastMatchRun(userId);
+      console.log(`[Sync] Updated lastMatchRun for user ${userId}`);
 
       res.json({
         success: true,
@@ -883,6 +897,7 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         unmatched: result.unmatched.length,
       });
     } catch (error) {
+      console.error(`[Sync] Error:`, error);
       res.status(500).json({ error: error instanceof Error ? error.message : "Sync failed" });
     }
   });
