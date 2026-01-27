@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Stepper, HourStepper } from "./Stepper";
-import { getSettings, saveSettings as saveSettingsApi, getSchedule } from "../api";
+import { getSettings, saveSettings as saveSettingsApi, getSchedule, getMatchHistory } from "../api";
 import type { SpotifyUser, UserSettings, ScheduledJob } from "../api";
 import "./Home.css";
 
@@ -30,6 +30,7 @@ function formatHourAmPm(hour: number): string {
 export function Home({ user, onViewDashboard, onLogout, onLogin, onAbout }: HomeProps) {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [schedule, setSchedule] = useState<ScheduledJob | null>(null);
+  const [lastMatchRun, setLastMatchRun] = useState<number>(0);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!!user);
@@ -81,12 +82,14 @@ export function Home({ user, onViewDashboard, onLogout, onLogin, onAbout }: Home
   async function loadSettingsFromServer() {
     try {
       setLoading(true);
-      const [serverSettings, scheduleData] = await Promise.all([
+      const [serverSettings, scheduleData, historyData] = await Promise.all([
         getSettings(),
         getSchedule(),
+        getMatchHistory(),
       ]);
       setSettings(serverSettings);
       setSchedule("enabled" in scheduleData && scheduleData.enabled ? scheduleData : null);
+      setLastMatchRun(historyData.lastMatchRun || 0);
     } catch (err) {
       console.error("Failed to load settings:", err);
     } finally {
@@ -132,7 +135,7 @@ export function Home({ user, onViewDashboard, onLogout, onLogin, onAbout }: Home
     if (diffDays === 0) {
       return `Today at ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
     } else if (diffDays === 1) {
-      return "Yesterday";
+      return `Yesterday at ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
     } else if (diffDays < 7) {
       return `${diffDays} days ago`;
     } else {
@@ -199,7 +202,7 @@ export function Home({ user, onViewDashboard, onLogout, onLogin, onAbout }: Home
                 <div className="sync-status sync-status-top">
                   <div className="sync-status-item">
                     <span className="sync-status-label">Last sync</span>
-                    <span className="sync-status-value">{formatLastSync(settings.lastUpdated)}</span>
+                    <span className="sync-status-value">{formatLastSync(lastMatchRun)}</span>
                   </div>
                   <div className="sync-status-divider" />
                   <div className="sync-status-item">
