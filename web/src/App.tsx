@@ -107,6 +107,7 @@ function App() {
         user={authStatus.user!}
         onBack={() => setView("home")}
         onLogout={handleLogout}
+        onAbout={() => setView("about")}
       />
     );
   }

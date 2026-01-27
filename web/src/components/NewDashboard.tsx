@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { getMatchHistory, getPlaylists, getSchedule, moveTrack, syncNow } from "../api";
-import type { MatchRecord, MatchHistory, SpotifyPlaylist, SpotifyUser, ScheduledJob } from "../api";
+import { getMatchHistory, getPlaylists, getSchedule, moveTrack, syncNow, getSettings } from "../api";
+import type { MatchRecord, MatchHistory, SpotifyPlaylist, SpotifyUser, ScheduledJob, UserSettings } from "../api";
 import "./NewDashboard.css";
 
 interface DashboardProps {
   user: SpotifyUser;
   onBack: () => void;
   onLogout: () => void;
+  onAbout?: () => void;
 }
 
 type ViewMode = "by-track" | "by-playlist";
@@ -17,10 +18,17 @@ interface PlaylistGroup {
   tracks: MatchRecord[];
 }
 
-export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
+interface SyncGroup {
+  date: string;
+  timestamp: number;
+  matches: MatchRecord[];
+}
+
+export function NewDashboard({ user, onBack, onLogout, onAbout }: DashboardProps) {
   const [history, setHistory] = useState<MatchHistory | null>(null);
   const [playlists, setPlaylists] = useState<SpotifyPlaylist[]>([]);
   const [schedule, setSchedule] = useState<ScheduledJob | null>(null);
+  const [settings, setSettings] = useState<UserSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>("by-track");
 
@@ -31,15 +39,28 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
 
   // Sync state
   const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ matchesAdded: number; unmatched: number } | null>(null);
+  const [syncResult, setSyncResult] = useState<{ matchesAdded: number; unmatched: number; alreadyMatched: number } | null>(null);
+
+  // Toast state
+  const [toast, setToast] = useState<{ message: string; type: "success" | "info" | "warning" } | null>(null);
 
   // Countdown state
   const [countdown, setCountdown] = useState<string>("");
 
+  // Expanded playlists state
+  const [expandedPlaylists, setExpandedPlaylists] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Auto-hide toast after 5 seconds
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   // Update countdown every second
   useEffect(() => {
@@ -81,14 +102,16 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
   async function loadData() {
     setLoading(true);
     try {
-      const [historyData, playlistsData, scheduleData] = await Promise.all([
+      const [historyData, playlistsData, scheduleData, settingsData] = await Promise.all([
         getMatchHistory(),
         getPlaylists(50),
         getSchedule(),
+        getSettings(),
       ]);
       setHistory(historyData);
       setPlaylists(playlistsData);
       setSchedule("enabled" in scheduleData && scheduleData.enabled ? scheduleData : null);
+      setSettings(settingsData);
     } catch (err) {
       console.error("Failed to load data:", err);
     } finally {
@@ -100,12 +123,41 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
     if (syncing) return;
     setSyncing(true);
     setSyncResult(null);
+    setToast(null);
     try {
       const result = await syncNow();
-      setSyncResult({ matchesAdded: result.matchesAdded, unmatched: result.unmatched });
+      setSyncResult({ matchesAdded: result.matchesAdded, unmatched: result.unmatched, alreadyMatched: result.alreadyMatched });
       await loadData(); // Reload to show new matches
+
+      // Show toast based on result
+      if (result.matchesAdded > 0) {
+        setToast({
+          message: `Matched ${result.matchesAdded} ${result.matchesAdded === 1 ? "song" : "songs"} to your playlists`,
+          type: "success",
+        });
+      } else if (result.alreadyMatched > 0) {
+        const songsToMatch = settings?.songsToMatch || 10;
+        setToast({
+          message: `All ${songsToMatch} recent liked songs have already been matched`,
+          type: "info",
+        });
+      } else if (result.unmatched > 0) {
+        setToast({
+          message: `No matches found. ${result.unmatched} songs didn't match any playlist`,
+          type: "warning",
+        });
+      } else {
+        setToast({
+          message: "No new songs found to match",
+          type: "info",
+        });
+      }
     } catch (err) {
       console.error("Sync failed:", err);
+      setToast({
+        message: "Sync failed. Please try again.",
+        type: "warning",
+      });
     } finally {
       setSyncing(false);
     }
@@ -133,6 +185,48 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
     }
   }
 
+  function formatSyncGroupDate(timestamp: number): string {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) {
+      return `Today, ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+    } else if (diffDays === 1) {
+      return `Yesterday, ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+    } else {
+      return date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    }
+  }
+
+  function groupBySyncDate(): SyncGroup[] {
+    if (!history) return [];
+
+    // Group matches by their matchedAt timestamp (within 5 minutes = same sync)
+    const groups: SyncGroup[] = [];
+    let currentGroup: SyncGroup | null = null;
+
+    // Sort by matchedAt descending (newest first)
+    const sortedMatches = [...history.matches].sort((a, b) => b.matchedAt - a.matchedAt);
+
+    for (const match of sortedMatches) {
+      // If no current group or match is more than 5 minutes from current group
+      if (!currentGroup || Math.abs(match.matchedAt - currentGroup.timestamp) > 5 * 60 * 1000) {
+        currentGroup = {
+          date: formatSyncGroupDate(match.matchedAt),
+          timestamp: match.matchedAt,
+          matches: [match],
+        };
+        groups.push(currentGroup);
+      } else {
+        currentGroup.matches.push(match);
+      }
+    }
+
+    return groups;
+  }
+
   function handleUnmatchClick(match: MatchRecord) {
     setModalTrack(match);
     setSelectedPlaylists(new Set());
@@ -146,6 +240,18 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
 
   function togglePlaylistSelection(playlistId: string) {
     setSelectedPlaylists((prev) => {
+      const next = new Set(prev);
+      if (next.has(playlistId)) {
+        next.delete(playlistId);
+      } else {
+        next.add(playlistId);
+      }
+      return next;
+    });
+  }
+
+  function togglePlaylistExpanded(playlistId: string) {
+    setExpandedPlaylists((prev) => {
       const next = new Set(prev);
       if (next.has(playlistId)) {
         next.delete(playlistId);
@@ -209,11 +315,13 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
     window.open(`spotify:track:${trackId}`, "_blank");
   }
 
-  function openPlaylistInSpotify(playlistId: string) {
+  function openPlaylistInSpotify(playlistId: string, e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
     window.open(`spotify:playlist:${playlistId}`, "_blank");
   }
 
   const playlistGroups = groupByPlaylist();
+  const syncGroups = groupBySyncDate();
 
   return (
     <div className="dashboard-new">
@@ -228,12 +336,29 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
         <h1 className="dashboard-title">Sortify</h1>
 
         <div className="dashboard-user">
+          {onAbout && (
+            <button className="about-link" onClick={onAbout}>
+              About
+            </button>
+          )}
           <span className="user-name">{user.display_name}</span>
           <button className="logout-btn" onClick={onLogout}>
             Logout
           </button>
         </div>
       </header>
+
+      {/* Toast notification */}
+      {toast && (
+        <div className={`toast toast-${toast.type}`}>
+          <span className="toast-message">{toast.message}</span>
+          <button className="toast-close" onClick={() => setToast(null)}>
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       <main className="dashboard-main">
         {loading ? (
@@ -322,78 +447,106 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                 </div>
               ) : viewMode === "by-track" ? (
                 <div className="tracks-list">
-                  {history?.matches.map((match, index) => (
-                    <div key={match.trackId} className="track-row">
-                      <div className="track-index-container">
-                        <span className="track-index">{index + 1}</span>
-                        <button
-                          className="track-play-btn"
-                          onClick={() => openTrackInSpotify(match.trackId)}
-                          aria-label={`Play ${match.trackName}`}
-                        >
-                          <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M8 5v14l11-7z" />
-                          </svg>
-                        </button>
+                  {syncGroups.map((group, groupIndex) => (
+                    <div key={group.timestamp} className="sync-group">
+                      <div className="sync-group-header">
+                        <span className="sync-group-date">{group.date}</span>
+                        <span className="sync-group-count">
+                          {group.matches.length} {group.matches.length === 1 ? "track" : "tracks"}
+                        </span>
                       </div>
+                      <div className="sync-group-tracks">
+                        {group.matches.map((match, index) => (
+                          <div key={match.trackId} className="track-row">
+                            <div className="track-index-container">
+                              <span className="track-index">{index + 1}</span>
+                              <button
+                                className="track-play-btn"
+                                onClick={() => openTrackInSpotify(match.trackId)}
+                                aria-label={`Play ${match.trackName}`}
+                              >
+                                <svg viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M8 5v14l11-7z" />
+                                </svg>
+                              </button>
+                            </div>
 
-                      <button
-                        className="match-checkbox"
-                        onClick={() => handleUnmatchClick(match)}
-                        aria-label="Unmatch track"
-                      >
-                        <svg viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
-                        </svg>
-                      </button>
+                            <div className="track-image">
+                              <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                              </svg>
+                            </div>
 
-                      <div className="track-info">
-                        <span className="track-name">{match.trackName || match.trackId}</span>
-                        {match.artistNames && (
-                          <span className="track-artist">{match.artistNames}</span>
-                        )}
+                            <div className="track-info">
+                              <button
+                                className="track-name-link"
+                                onClick={() => openTrackInSpotify(match.trackId)}
+                              >
+                                {match.trackName || match.trackId}
+                              </button>
+                              {match.artistNames && (
+                                <span className="track-artist">{match.artistNames}</span>
+                              )}
+                            </div>
+
+                            <div className="match-arrow-container">
+                              <svg className="match-arrow" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" />
+                              </svg>
+                            </div>
+
+                            <div
+                              className="playlist-chip"
+                              onClick={() => openPlaylistInSpotify(match.playlistId)}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") openPlaylistInSpotify(match.playlistId);
+                              }}
+                            >
+                              <div className="playlist-chip-image">
+                                {getPlaylistImage(match.playlistId) ? (
+                                  <img src={getPlaylistImage(match.playlistId)!} alt="" />
+                                ) : (
+                                  <svg viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z" />
+                                  </svg>
+                                )}
+                              </div>
+                              <span className="playlist-chip-name">{match.playlistName}</span>
+                            </div>
+
+                            <button
+                              className="match-checkbox"
+                              onClick={() => handleUnmatchClick(match)}
+                              aria-label="Unmatch track"
+                              title="Move to different playlist"
+                            >
+                              <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
                       </div>
-
-                      <svg className="match-arrow" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" />
-                      </svg>
-
-                      <div
-                        className="playlist-chip"
-                        onClick={() => openPlaylistInSpotify(match.playlistId)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") openPlaylistInSpotify(match.playlistId);
-                        }}
-                      >
-                        <div className="playlist-chip-image">
-                          {getPlaylistImage(match.playlistId) ? (
-                            <img src={getPlaylistImage(match.playlistId)!} alt="" />
-                          ) : (
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                              <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z" />
-                            </svg>
-                          )}
-                        </div>
-                        <span className="playlist-chip-name">{match.playlistName}</span>
-                      </div>
-
-                      <span className="track-date">{formatDate(match.matchedAt)}</span>
+                      {groupIndex < syncGroups.length - 1 && <div className="sync-group-divider" />}
                     </div>
                   ))}
                 </div>
               ) : (
                 <div className="playlist-groups">
                   {playlistGroups.map((group) => (
-                    <div key={group.playlistId} className="playlist-group">
+                    <div
+                      key={group.playlistId}
+                      className={`playlist-group ${expandedPlaylists.has(group.playlistId) ? "expanded" : ""}`}
+                    >
                       <div
                         className="playlist-group-header"
-                        onClick={() => openPlaylistInSpotify(group.playlistId)}
+                        onClick={() => togglePlaylistExpanded(group.playlistId)}
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") openPlaylistInSpotify(group.playlistId);
+                          if (e.key === "Enter") togglePlaylistExpanded(group.playlistId);
                         }}
                       >
                         <div className="playlist-group-image">
@@ -404,17 +557,26 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                               <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z" />
                             </svg>
                           )}
-                          <div className="playlist-play-overlay">
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                              <path d="M8 5v14l11-7z" />
-                            </svg>
-                          </div>
                         </div>
                         <div className="playlist-group-info">
                           <span className="playlist-group-name">{group.playlistName}</span>
                           <span className="playlist-group-count">
-                            {group.tracks.length} {group.tracks.length === 1 ? "track" : "tracks"}
+                            {group.tracks.length} {group.tracks.length === 1 ? "track" : "tracks"} matched
                           </span>
+                        </div>
+                        <button
+                          className="playlist-open-btn"
+                          onClick={(e) => openPlaylistInSpotify(group.playlistId, e)}
+                          title="Open in Spotify"
+                        >
+                          <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" />
+                          </svg>
+                        </button>
+                        <div className="playlist-expand-icon">
+                          <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z" />
+                          </svg>
                         </div>
                       </div>
                       <div className="playlist-group-tracks">
@@ -432,22 +594,33 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                                 </svg>
                               </button>
                             </div>
-                            <button
-                              className="match-checkbox small"
-                              onClick={() => handleUnmatchClick(track)}
-                              aria-label="Unmatch track"
-                            >
+                            <div className="track-image small">
                               <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
                               </svg>
-                            </button>
+                            </div>
                             <div className="playlist-track-info">
-                              <span className="playlist-track-name">{track.trackName || track.trackId}</span>
+                              <button
+                                className="track-name-link"
+                                onClick={() => openTrackInSpotify(track.trackId)}
+                              >
+                                {track.trackName || track.trackId}
+                              </button>
                               {track.artistNames && (
                                 <span className="playlist-track-artist">{track.artistNames}</span>
                               )}
                             </div>
                             <span className="playlist-track-date">{formatDate(track.matchedAt)}</span>
+                            <button
+                              className="match-checkbox small"
+                              onClick={() => handleUnmatchClick(track)}
+                              aria-label="Unmatch track"
+                              title="Move to different playlist"
+                            >
+                              <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                              </svg>
+                            </button>
                           </div>
                         ))}
                       </div>
