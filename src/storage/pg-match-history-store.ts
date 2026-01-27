@@ -120,4 +120,21 @@ export class PgMatchHistoryStore {
       [userId, Date.now()]
     );
   }
+
+  async updateTrackImages(userId: string, trackImages: Map<string, string>): Promise<number> {
+    const pool = getPool();
+    let updated = 0;
+
+    for (const [trackId, imageUrl] of trackImages) {
+      const result = await pool.query(
+        `UPDATE match_history
+         SET track_image_url = $3
+         WHERE user_id = $1 AND track_id = $2 AND (track_image_url IS NULL OR track_image_url = '')`,
+        [userId, trackId, imageUrl]
+      );
+      updated += result.rowCount || 0;
+    }
+
+    return updated;
+  }
 }

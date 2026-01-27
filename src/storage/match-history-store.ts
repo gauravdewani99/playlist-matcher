@@ -79,6 +79,28 @@ export class MatchHistoryStore {
     await this.saveAllHistory(allHistory);
   }
 
+  async updateTrackImages(userId: string, trackImages: Map<string, string>): Promise<number> {
+    const allHistory = await this.getAllHistory();
+    const userHistory = allHistory[userId];
+    if (!userHistory) return 0;
+
+    let updated = 0;
+    for (const match of userHistory.matches) {
+      const imageUrl = trackImages.get(match.trackId);
+      if (imageUrl && !match.trackImageUrl) {
+        match.trackImageUrl = imageUrl;
+        updated++;
+      }
+    }
+
+    if (updated > 0) {
+      allHistory[userId] = userHistory;
+      await this.saveAllHistory(allHistory);
+    }
+
+    return updated;
+  }
+
   private async getAllHistory(): Promise<Record<string, UserMatchHistory>> {
     try {
       const data = await fs.readFile(this.historyPath, "utf-8");

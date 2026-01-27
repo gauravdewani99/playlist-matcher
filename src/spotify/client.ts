@@ -108,6 +108,27 @@ export class SpotifyClient {
       .filter((track): track is SpotifyTrack => track !== null);
   }
 
+  async getTracks(trackIds: string[]): Promise<SpotifyTrack[]> {
+    if (trackIds.length === 0) return [];
+
+    // Spotify allows max 50 tracks per request
+    const chunks: string[][] = [];
+    for (let i = 0; i < trackIds.length; i += 50) {
+      chunks.push(trackIds.slice(i, i + 50));
+    }
+
+    const results: SpotifyTrack[] = [];
+
+    for (const chunk of chunks) {
+      const response = await this.request<{
+        tracks: (SpotifyTrack | null)[];
+      }>(`/tracks?ids=${chunk.join(",")}`);
+      results.push(...response.tracks.filter((t): t is SpotifyTrack => t !== null));
+    }
+
+    return results;
+  }
+
   async getAudioFeatures(trackIds: string[]): Promise<(AudioFeatures | null)[]> {
     if (trackIds.length === 0) return [];
 

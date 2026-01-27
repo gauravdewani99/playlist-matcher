@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getMatchHistory, getPlaylists, getSchedule, moveTrack, syncNow, getSettings } from "../api";
+import { getMatchHistory, getPlaylists, getSchedule, moveTrack, syncNow, getSettings, backfillImages } from "../api";
 import type { MatchRecord, MatchHistory, SpotifyPlaylist, SpotifyUser, ScheduledJob, UserSettings } from "../api";
 import "./NewDashboard.css";
 
@@ -112,6 +112,23 @@ export function NewDashboard({ user, onBack, onLogout, onAbout }: DashboardProps
       setPlaylists(playlistsData);
       setSchedule("enabled" in scheduleData && scheduleData.enabled ? scheduleData : null);
       setSettings(settingsData);
+
+      // Backfill track images in the background for existing matches
+      const tracksWithoutImages = historyData.matches.filter((m) => !m.trackImageUrl);
+      if (tracksWithoutImages.length > 0) {
+        backfillImages()
+          .then((result) => {
+            if (result.updated > 0) {
+              // Reload history to show updated images
+              getMatchHistory().then((updatedHistory) => {
+                setHistory(updatedHistory);
+              });
+            }
+          })
+          .catch((err) => {
+            console.error("Failed to backfill images:", err);
+          });
+      }
     } catch (err) {
       console.error("Failed to load data:", err);
     } finally {

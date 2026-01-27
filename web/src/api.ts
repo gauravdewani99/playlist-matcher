@@ -271,6 +271,18 @@ export async function syncNow(): Promise<SyncResult> {
   return fetchApi("/sync-now", { method: "POST" });
 }
 
+// Backfill track images for existing matches
+export interface BackfillResult {
+  success: boolean;
+  updated: number;
+  total: number;
+  message: string;
+}
+
+export async function backfillImages(): Promise<BackfillResult> {
+  return fetchApi("/backfill-images", { method: "POST" });
+}
+
 // Debug function - call from browser console: await debugTestMatch()
 export async function debugTestMatch(): Promise<any> {
   return fetchApi("/debug/test-match");

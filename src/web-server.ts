@@ -83,6 +83,7 @@ interface IMatchHistoryStore {
   removeMatch(userId: string, trackId: string): Promise<void>;
   getMatchedTrackIds(userId: string): Promise<Set<string>>;
   updateLastMatchRun(userId: string): Promise<void>;
+  updateTrackImages(userId: string, trackImages: Map<string, string>): Promise<number>;
 }
 
 // Common scheduler store interface
@@ -996,6 +997,61 @@ export async function createWebServer(clientId: string, port: number = 3001) {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: error instanceof Error ? error.message : "Failed to move track" });
+    }
+  });
+
+  // Backfill track images for existing matches
+  app.post("/api/backfill-images", requireAuth, async (req: AuthenticatedRequest, res) => {
+    try {
+      const spotifyClient = createSpotifyClient(req);
+
+      let userId: string;
+      if (usePostgres && req.userId) {
+        userId = req.userId;
+      } else {
+        const user = await spotifyClient.getCurrentUser();
+        userId = user.id;
+      }
+
+      // Get all matches for user
+      const history = await matchHistoryStore.getHistory(userId);
+
+      // Filter matches without images
+      const matchesWithoutImages = history.matches.filter(
+        (m: any) => !m.trackImageUrl
+      );
+
+      if (matchesWithoutImages.length === 0) {
+        return res.json({ success: true, updated: 0, message: "All tracks already have images" });
+      }
+
+      // Get track IDs that need images
+      const trackIds = matchesWithoutImages.map((m: any) => m.trackId);
+
+      // Fetch tracks from Spotify (in batches of 50)
+      const tracks = await spotifyClient.getTracks(trackIds);
+
+      // Build map of trackId -> imageUrl
+      const trackImages = new Map<string, string>();
+      for (const track of tracks) {
+        const imageUrl = track.album?.images?.[0]?.url;
+        if (imageUrl) {
+          trackImages.set(track.id, imageUrl);
+        }
+      }
+
+      // Update the database
+      const updated = await matchHistoryStore.updateTrackImages(userId, trackImages);
+
+      res.json({
+        success: true,
+        updated,
+        total: matchesWithoutImages.length,
+        message: `Updated ${updated} of ${matchesWithoutImages.length} tracks with images`
+      });
+    } catch (error) {
+      console.error("[Backfill] Error:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to backfill images" });
     }
   });
 
