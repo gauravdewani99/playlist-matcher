@@ -10,6 +10,7 @@ export interface TrackWithGenres {
   artistNames: string[];
   genres: string[];
   popularity: number;
+  imageUrl?: string;
 }
 
 export interface PlaylistProfile {
@@ -28,6 +29,7 @@ export interface MatchResult {
   trackUri: string;
   trackName: string;
   artistNames: string;
+  trackImageUrl?: string;
   trackGenres: string[];
   playlistId: string;
   playlistName: string;
@@ -192,6 +194,7 @@ export class GenreMatcher {
         artistNames: track.artists.map(a => a.name),
         genres: allGenres,
         popularity: track.popularity || 0,
+        imageUrl: track.album?.images?.[0]?.url,
       };
     });
   }
@@ -308,6 +311,7 @@ export class GenreMatcher {
           trackUri: song.uri,
           trackName: song.name,
           artistNames: song.artistNames.join(", "),
+          trackImageUrl: song.imageUrl,
           trackGenres: song.genres,
           playlistId: bestMatch.profile.playlistId,
           playlistName: bestMatch.profile.playlistName,

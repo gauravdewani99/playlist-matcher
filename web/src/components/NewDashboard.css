@@ -805,8 +805,12 @@
   grid-template-rows: 1fr;
 }
 
-.playlist-group-tracks > * {
+.playlist-tracks-inner {
   overflow: hidden;
+}
+
+.playlist-tracks-inner > .playlist-track-row:first-child {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .playlist-track-row {
@@ -816,10 +820,6 @@
   gap: var(--spacing-sm);
   padding: var(--spacing-sm) var(--spacing-lg);
   transition: background var(--transition-fast);
-}
-
-.playlist-track-row:first-child {
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .playlist-track-row:hover {

@@ -472,9 +472,13 @@ export function NewDashboard({ user, onBack, onLogout, onAbout }: DashboardProps
                             </div>
 
                             <div className="track-image">
-                              <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-                              </svg>
+                              {match.trackImageUrl ? (
+                                <img src={match.trackImageUrl} alt="" />
+                              ) : (
+                                <svg viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                                </svg>
+                              )}
                             </div>
 
                             <div className="track-info">
@@ -580,49 +584,55 @@ export function NewDashboard({ user, onBack, onLogout, onAbout }: DashboardProps
                         </div>
                       </div>
                       <div className="playlist-group-tracks">
-                        {group.tracks.map((track, index) => (
-                          <div key={track.trackId} className="playlist-track-row">
-                            <div className="track-index-container small">
-                              <span className="track-index">{index + 1}</span>
+                        <div className="playlist-tracks-inner">
+                          {group.tracks.map((track, index) => (
+                            <div key={track.trackId} className="playlist-track-row">
+                              <div className="track-index-container small">
+                                <span className="track-index">{index + 1}</span>
+                                <button
+                                  className="track-play-btn"
+                                  onClick={() => openTrackInSpotify(track.trackId)}
+                                  aria-label={`Play ${track.trackName}`}
+                                >
+                                  <svg viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M8 5v14l11-7z" />
+                                  </svg>
+                                </button>
+                              </div>
+                              <div className="track-image small">
+                                {track.trackImageUrl ? (
+                                  <img src={track.trackImageUrl} alt="" />
+                                ) : (
+                                  <svg viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                                  </svg>
+                                )}
+                              </div>
+                              <div className="playlist-track-info">
+                                <button
+                                  className="track-name-link"
+                                  onClick={() => openTrackInSpotify(track.trackId)}
+                                >
+                                  {track.trackName || track.trackId}
+                                </button>
+                                {track.artistNames && (
+                                  <span className="playlist-track-artist">{track.artistNames}</span>
+                                )}
+                              </div>
+                              <span className="playlist-track-date">{formatDate(track.matchedAt)}</span>
                               <button
-                                className="track-play-btn"
-                                onClick={() => openTrackInSpotify(track.trackId)}
-                                aria-label={`Play ${track.trackName}`}
+                                className="match-checkbox small"
+                                onClick={() => handleUnmatchClick(track)}
+                                aria-label="Unmatch track"
+                                title="Move to different playlist"
                               >
                                 <svg viewBox="0 0 24 24" fill="currentColor">
-                                  <path d="M8 5v14l11-7z" />
+                                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
                                 </svg>
                               </button>
                             </div>
-                            <div className="track-image small">
-                              <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-                              </svg>
-                            </div>
-                            <div className="playlist-track-info">
-                              <button
-                                className="track-name-link"
-                                onClick={() => openTrackInSpotify(track.trackId)}
-                              >
-                                {track.trackName || track.trackId}
-                              </button>
-                              {track.artistNames && (
-                                <span className="playlist-track-artist">{track.artistNames}</span>
-                              )}
-                            </div>
-                            <span className="playlist-track-date">{formatDate(track.matchedAt)}</span>
-                            <button
-                              className="match-checkbox small"
-                              onClick={() => handleUnmatchClick(track)}
-                              aria-label="Unmatch track"
-                              title="Move to different playlist"
-                            >
-                              <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
-                              </svg>
-                            </button>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     </div>
                   ))}

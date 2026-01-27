@@ -4,6 +4,7 @@ export interface MatchRecord {
   trackId: string;
   trackName: string;
   artistNames: string;
+  trackImageUrl?: string;
   playlistId: string;
   playlistName: string;
   matchedAt: number;
@@ -20,7 +21,7 @@ export class PgMatchHistoryStore {
 
     // Get all matches for user
     const matchesResult = await pool.query(
-      `SELECT track_id, track_name, artist_names, playlist_id, playlist_name, matched_at
+      `SELECT track_id, track_name, artist_names, track_image_url, playlist_id, playlist_name, matched_at
        FROM match_history WHERE user_id = $1 ORDER BY matched_at DESC`,
       [userId]
     );
@@ -35,6 +36,7 @@ export class PgMatchHistoryStore {
       trackId: row.track_id,
       trackName: row.track_name || "",
       artistNames: row.artist_names || "",
+      trackImageUrl: row.track_image_url || undefined,
       playlistId: row.playlist_id,
       playlistName: row.playlist_name || "",
       matchedAt: Number(row.matched_at),
@@ -51,11 +53,12 @@ export class PgMatchHistoryStore {
     // Insert matches (ignore duplicates)
     for (const match of matches) {
       await pool.query(
-        `INSERT INTO match_history (user_id, track_id, track_name, artist_names, playlist_id, playlist_name, matched_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO match_history (user_id, track_id, track_name, artist_names, track_image_url, playlist_id, playlist_name, matched_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (user_id, track_id) DO UPDATE SET
            track_name = EXCLUDED.track_name,
            artist_names = EXCLUDED.artist_names,
+           track_image_url = EXCLUDED.track_image_url,
            playlist_id = EXCLUDED.playlist_id,
            playlist_name = EXCLUDED.playlist_name,
            matched_at = EXCLUDED.matched_at`,
@@ -64,6 +67,7 @@ export class PgMatchHistoryStore {
           match.trackId,
           match.trackName,
           match.artistNames,
+          match.trackImageUrl || null,
           match.playlistId,
           match.playlistName,
           match.matchedAt,

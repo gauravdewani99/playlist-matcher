@@ -64,6 +64,7 @@ export async function initializeDatabase(): Promise<void> {
       track_id VARCHAR(255) NOT NULL,
       track_name VARCHAR(500),
       artist_names VARCHAR(500),
+      track_image_url VARCHAR(500),
       playlist_id VARCHAR(255) NOT NULL,
       playlist_name VARCHAR(500),
       matched_at BIGINT NOT NULL,
@@ -73,6 +74,13 @@ export async function initializeDatabase(): Promise<void> {
 
     -- Create index for faster lookups
     CREATE INDEX IF NOT EXISTS idx_match_history_user_id ON match_history(user_id);
+
+    -- Add track_image_url column if it doesn't exist (migration)
+    DO $$ BEGIN
+      ALTER TABLE match_history ADD COLUMN IF NOT EXISTS track_image_url VARCHAR(500);
+    EXCEPTION
+      WHEN duplicate_column THEN NULL;
+    END $$;
 
     -- Scheduled jobs table
     CREATE TABLE IF NOT EXISTS scheduled_jobs (

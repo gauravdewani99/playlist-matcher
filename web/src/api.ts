@@ -99,6 +99,7 @@ export interface MatchRecord {
   trackId: string;
   trackName: string;
   artistNames: string;
+  trackImageUrl?: string;
   playlistId: string;
   playlistName: string;
   matchedAt: number;
