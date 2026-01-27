@@ -269,3 +269,8 @@ export interface SyncResult {
 export async function syncNow(): Promise<SyncResult> {
   return fetchApi("/sync-now", { method: "POST" });
 }
+
+// Debug function - call from browser console: await debugTestMatch()
+export async function debugTestMatch(): Promise<any> {
+  return fetchApi("/debug/test-match");
+}
