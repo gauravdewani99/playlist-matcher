@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getMatchHistory, getPlaylists, getSchedule, moveTrack, syncNow } from "../api";
+import { getMatchHistory, getPlaylists, getSchedule, moveTrack, syncNow, debugTestMatch } from "../api";
 import type { MatchRecord, MatchHistory, SpotifyPlaylist, SpotifyUser, ScheduledJob } from "../api";
 import "./NewDashboard.css";
 
@@ -34,6 +34,10 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
 
   // Countdown state
   const [countdown, setCountdown] = useState<string>("");
+
+  // Debug state
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [debugLoading, setDebugLoading] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -104,6 +108,20 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
       console.error("Sync failed:", err);
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function handleDebugTest() {
+    if (debugLoading) return;
+    setDebugLoading(true);
+    setDebugInfo(null);
+    try {
+      const result = await debugTestMatch();
+      setDebugInfo(result);
+    } catch (err) {
+      setDebugInfo({ error: err instanceof Error ? err.message : "Debug failed" });
+    } finally {
+      setDebugLoading(false);
     }
   }
 
@@ -300,6 +318,29 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                   <span className="empty-hint">
                     Your liked songs will be automatically matched to playlists at the next sync
                   </span>
+                  <button
+                    className="debug-btn"
+                    onClick={handleDebugTest}
+                    disabled={debugLoading}
+                    style={{ marginTop: "1rem", padding: "0.5rem 1rem", cursor: "pointer" }}
+                  >
+                    {debugLoading ? "Testing..." : "Run Diagnostics"}
+                  </button>
+                  {debugInfo && (
+                    <div className="debug-info" style={{ marginTop: "1rem", textAlign: "left", background: "#1a1a1a", padding: "1rem", borderRadius: "8px", maxWidth: "500px", fontSize: "0.85rem" }}>
+                      <p><strong>User ID:</strong> {debugInfo.userId}</p>
+                      <p><strong>Liked Songs:</strong> {debugInfo.likedSongsCount}</p>
+                      <p><strong>Owned Playlists:</strong> {debugInfo.ownedPlaylistsCount} (of {debugInfo.totalPlaylists} total)</p>
+                      {debugInfo.ownedPlaylists && (
+                        <p><strong>Playlists:</strong> {debugInfo.ownedPlaylists.map((p: any) => `${p.name} (${p.tracks})`).join(", ")}</p>
+                      )}
+                      <p><strong>Match Result:</strong> {debugInfo.matchResult?.matches || 0} matches, {debugInfo.matchResult?.unmatched || 0} unmatched</p>
+                      {debugInfo.matchResult?.unmatchedReasons?.length > 0 && (
+                        <p><strong>Reasons:</strong> {debugInfo.matchResult.unmatchedReasons.join("; ")}</p>
+                      )}
+                      {debugInfo.error && <p style={{ color: "#ff6b6b" }}><strong>Error:</strong> {debugInfo.error}</p>}
+                    </div>
+                  )}
                 </div>
               ) : viewMode === "by-track" ? (
                 <div className="tracks-list">
