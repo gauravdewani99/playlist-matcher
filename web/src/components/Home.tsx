@@ -9,6 +9,7 @@ interface HomeProps {
   onViewDashboard?: () => void;
   onLogout?: () => void;
   onLogin?: () => void;
+  onAbout?: () => void;
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -26,7 +27,7 @@ function formatHourAmPm(hour: number): string {
   return `${hour - 12}pm`;
 }
 
-export function Home({ user, onViewDashboard, onLogout, onLogin }: HomeProps) {
+export function Home({ user, onViewDashboard, onLogout, onLogin, onAbout }: HomeProps) {
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [schedule, setSchedule] = useState<ScheduledJob | null>(null);
   const [saved, setSaved] = useState(false);
@@ -149,25 +150,28 @@ export function Home({ user, onViewDashboard, onLogout, onLogin }: HomeProps) {
           <span className="logo-text">Sortify</span>
         </div>
 
-        {user ? (
-          <div className="home-nav">
-            <button className="nav-btn" onClick={onViewDashboard}>
-              View Dashboard
-            </button>
-            <div className="user-menu">
-              <span className="user-name">{user.display_name}</span>
-              <button className="logout-btn" onClick={onLogout}>
-                Logout
+        <div className="home-nav">
+          <button className="nav-link" onClick={onAbout}>
+            About
+          </button>
+          {user ? (
+            <>
+              <button className="nav-btn" onClick={onViewDashboard}>
+                View Dashboard
               </button>
-            </div>
-          </div>
-        ) : (
-          <div className="home-nav">
+              <div className="user-menu">
+                <span className="user-name">{user.display_name}</span>
+                <button className="logout-btn" onClick={onLogout}>
+                  Logout
+                </button>
+              </div>
+            </>
+          ) : (
             <button className="nav-btn" onClick={onLogin}>
               Login
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </header>
 
       <main className="home-main">

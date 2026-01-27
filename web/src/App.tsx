@@ -3,9 +3,10 @@ import { getAuthStatus, getAuthUrl, logout, validateSession, setStoredSession } 
 import type { AuthStatus } from "./api";
 import { Home } from "./components/Home";
 import { NewDashboard } from "./components/NewDashboard";
+import { About } from "./components/About";
 import "./App.css";
 
-type View = "home" | "dashboard";
+type View = "home" | "dashboard" | "about";
 
 function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
@@ -94,6 +95,11 @@ function App() {
     );
   }
 
+  // Show About page
+  if (view === "about") {
+    return <About onBack={() => setView("home")} />;
+  }
+
   // Show dashboard if authenticated and on dashboard view
   if (authStatus?.authenticated && view === "dashboard") {
     return (
@@ -119,6 +125,7 @@ function App() {
         onViewDashboard={() => setView("dashboard")}
         onLogout={handleLogout}
         onLogin={handleLogin}
+        onAbout={() => setView("about")}
       />
     </>
   );
