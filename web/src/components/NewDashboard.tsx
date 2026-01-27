@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getMatchHistory, getPlaylists, getSchedule, moveTrack, syncNow, debugTestMatch } from "../api";
+import { getMatchHistory, getPlaylists, getSchedule, moveTrack, syncNow } from "../api";
 import type { MatchRecord, MatchHistory, SpotifyPlaylist, SpotifyUser, ScheduledJob } from "../api";
 import "./NewDashboard.css";
 
@@ -31,13 +31,11 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
 
   // Sync state
   const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ matchesAdded: number; unmatched: number } | null>(null);
 
   // Countdown state
   const [countdown, setCountdown] = useState<string>("");
 
-  // Debug state
-  const [debugInfo, setDebugInfo] = useState<any>(null);
-  const [debugLoading, setDebugLoading] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -101,27 +99,15 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
   async function handleSyncNow() {
     if (syncing) return;
     setSyncing(true);
+    setSyncResult(null);
     try {
-      await syncNow();
+      const result = await syncNow();
+      setSyncResult({ matchesAdded: result.matchesAdded, unmatched: result.unmatched });
       await loadData(); // Reload to show new matches
     } catch (err) {
       console.error("Sync failed:", err);
     } finally {
       setSyncing(false);
-    }
-  }
-
-  async function handleDebugTest() {
-    if (debugLoading) return;
-    setDebugLoading(true);
-    setDebugInfo(null);
-    try {
-      const result = await debugTestMatch();
-      setDebugInfo(result);
-    } catch (err) {
-      setDebugInfo({ error: err instanceof Error ? err.message : "Debug failed" });
-    } finally {
-      setDebugLoading(false);
     }
   }
 
@@ -289,6 +275,13 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
               </div>
             </div>
 
+            {/* Sync Status Message */}
+            {syncing && (
+              <div className="sync-status-message">
+                Analyzing your liked songs and finding the best playlists...
+              </div>
+            )}
+
             {/* View Toggle */}
             <div className="view-toggle-container">
               <div className="view-toggle">
@@ -315,31 +308,16 @@ export function NewDashboard({ user, onBack, onLogout }: DashboardProps) {
                     <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
                   </svg>
                   <p>No matches yet</p>
-                  <span className="empty-hint">
-                    Your liked songs will be automatically matched to playlists at the next sync
-                  </span>
-                  <button
-                    className="debug-btn"
-                    onClick={handleDebugTest}
-                    disabled={debugLoading}
-                    style={{ marginTop: "1rem", padding: "0.5rem 1rem", cursor: "pointer" }}
-                  >
-                    {debugLoading ? "Testing..." : "Run Diagnostics"}
-                  </button>
-                  {debugInfo && (
-                    <div className="debug-info" style={{ marginTop: "1rem", textAlign: "left", background: "#1a1a1a", padding: "1rem", borderRadius: "8px", maxWidth: "500px", fontSize: "0.85rem" }}>
-                      <p><strong>User ID:</strong> {debugInfo.userId}</p>
-                      <p><strong>Liked Songs:</strong> {debugInfo.likedSongsCount}</p>
-                      <p><strong>Owned Playlists:</strong> {debugInfo.ownedPlaylistsCount} (of {debugInfo.totalPlaylists} total)</p>
-                      {debugInfo.ownedPlaylists && (
-                        <p><strong>Playlists:</strong> {debugInfo.ownedPlaylists.map((p: any) => `${p.name} (${p.tracks})`).join(", ")}</p>
-                      )}
-                      <p><strong>Match Result:</strong> {debugInfo.matchResult?.matches || 0} matches, {debugInfo.matchResult?.unmatched || 0} unmatched</p>
-                      {debugInfo.matchResult?.unmatchedReasons?.length > 0 && (
-                        <p><strong>Reasons:</strong> {debugInfo.matchResult.unmatchedReasons.join("; ")}</p>
-                      )}
-                      {debugInfo.error && <p style={{ color: "#ff6b6b" }}><strong>Error:</strong> {debugInfo.error}</p>}
-                    </div>
+                  {syncResult && syncResult.matchesAdded === 0 ? (
+                    <span className="empty-hint">
+                      {syncResult.unmatched > 0
+                        ? "Your liked songs didn't match any of your playlists. Try creating playlists with similar genres or artists."
+                        : "No liked songs found. Like some songs on Spotify first!"}
+                    </span>
+                  ) : (
+                    <span className="empty-hint">
+                      Click the sync button above to match your liked songs to playlists.
+                    </span>
                   )}
                 </div>
               ) : viewMode === "by-track" ? (

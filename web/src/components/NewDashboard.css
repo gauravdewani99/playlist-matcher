@@ -230,6 +230,20 @@
   color: var(--spotify-text-subdued);
 }
 
+/* Sync Status Message */
+.sync-status-message {
+  text-align: center;
+  padding: var(--spacing-md);
+  color: var(--spotify-text-subdued);
+  font-size: var(--font-size-sm);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
 /* View Toggle */
 .view-toggle-container {
   display: flex;
