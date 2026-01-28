@@ -346,8 +346,7 @@
 
   .home-main {
     padding: var(--spacing-md);
-    align-items: flex-start;
-    padding-top: var(--spacing-xl);
+    align-items: center;
   }
 
   .settings-card {
@@ -371,10 +370,10 @@
     margin-bottom: var(--spacing-xl);
   }
 
+  /* Keep the same grid layout as desktop for consistent alignment */
   .settings-row {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
     gap: var(--spacing-sm);
   }
@@ -418,7 +417,6 @@
 @media (max-width: 480px) {
   .home-main {
     padding: var(--spacing-sm);
-    padding-top: var(--spacing-lg);
   }
 
   .settings-card {

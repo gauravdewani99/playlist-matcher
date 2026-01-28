@@ -121,6 +121,7 @@ interface HourWheelPickerProps {
 }
 
 export function HourWheelPicker({ value, onChange }: HourWheelPickerProps) {
+  // Format for the scrollable list (shows full time with AM/PM)
   const formatHour = (hour: number): string => {
     if (hour === 0) return "12:00 AM";
     if (hour === 12) return "12:00 PM";
@@ -128,11 +129,9 @@ export function HourWheelPicker({ value, onChange }: HourWheelPickerProps) {
     return `${hour - 12}:00 PM`;
   };
 
-  const formatTrigger = (hour: number): string => {
-    if (hour === 0) return "12am";
-    if (hour === 12) return "12pm";
-    if (hour < 12) return `${hour}am`;
-    return `${hour - 12}pm`;
+  // Get AM/PM suffix for the trigger button
+  const getAmPm = (hour: number): string => {
+    return hour < 12 ? "AM" : "PM";
   };
 
   return (
@@ -143,7 +142,15 @@ export function HourWheelPicker({ value, onChange }: HourWheelPickerProps) {
       onChange={onChange}
       label="Select Time"
       formatValue={formatHour}
-      suffix={formatTrigger(value).replace(/\d+/, "")}
+      suffix={getAmPm(value)}
     />
   );
+}
+
+// Helper to format hour for display outside the picker
+export function formatHourDisplay(hour: number): string {
+  if (hour === 0) return "12 AM";
+  if (hour === 12) return "12 PM";
+  if (hour < 12) return `${hour} AM`;
+  return `${hour - 12} PM`;
 }
