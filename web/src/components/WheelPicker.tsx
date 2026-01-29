@@ -9,9 +9,10 @@ interface WheelPickerProps {
   label?: string;
   suffix?: string;
   formatValue?: (value: number) => string;
+  triggerFormatValue?: (value: number) => string;
 }
 
-export function WheelPicker({ value, min, max, onChange, label, suffix, formatValue }: WheelPickerProps) {
+export function WheelPicker({ value, min, max, onChange, label, suffix, formatValue, triggerFormatValue }: WheelPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [tempValue, setTempValue] = useState(value);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -20,7 +21,8 @@ export function WheelPicker({ value, min, max, onChange, label, suffix, formatVa
 
   const options = Array.from({ length: max - min + 1 }, (_, i) => min + i);
 
-  const displayValue = formatValue ? formatValue(value) : value.toString();
+  // Use triggerFormatValue for the button display, fall back to formatValue or raw value
+  const displayValue = triggerFormatValue ? triggerFormatValue(value) : (formatValue ? formatValue(value) : value.toString());
 
   useEffect(() => {
     if (isOpen) {
@@ -122,11 +124,19 @@ interface HourWheelPickerProps {
 
 export function HourWheelPicker({ value, onChange }: HourWheelPickerProps) {
   // Format for the scrollable list (shows full time with AM/PM)
-  const formatHour = (hour: number): string => {
+  const formatHourInPicker = (hour: number): string => {
     if (hour === 0) return "12:00 AM";
     if (hour === 12) return "12:00 PM";
     if (hour < 12) return `${hour}:00 AM`;
     return `${hour - 12}:00 PM`;
+  };
+
+  // Format for the trigger button (just the hour number)
+  const formatHourForTrigger = (hour: number): string => {
+    if (hour === 0) return "12";
+    if (hour === 12) return "12";
+    if (hour < 12) return `${hour}`;
+    return `${hour - 12}`;
   };
 
   // Get AM/PM suffix for the trigger button
@@ -141,7 +151,8 @@ export function HourWheelPicker({ value, onChange }: HourWheelPickerProps) {
       max={23}
       onChange={onChange}
       label="Select Time"
-      formatValue={formatHour}
+      formatValue={formatHourInPicker}
+      triggerFormatValue={formatHourForTrigger}
       suffix={getAmPm(value)}
     />
   );
