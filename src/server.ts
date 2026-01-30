@@ -3,15 +3,12 @@ import { z } from "zod";
 import { SpotifyOAuth } from "./auth/oauth.js";
 import { TokenStore } from "./auth/token-store.js";
 import { SpotifyClient } from "./spotify/client.js";
-import { SongMatcher } from "./matching/matcher.js";
-import { formatFeatures } from "./matching/similarity.js";
 import { GenreMatcher } from "./matching/genre-matcher.js";
 
 export async function createServer(clientId: string) {
   const tokenStore = new TokenStore();
   const oauth = new SpotifyOAuth({ clientId }, tokenStore);
   const spotifyClient = new SpotifyClient(oauth);
-  const matcher = new SongMatcher(spotifyClient);
   const genreMatcher = new GenreMatcher(spotifyClient);
 
   const server = new McpServer({
@@ -140,8 +137,7 @@ export async function createServer(clientId: string) {
         const features = await spotifyClient.getAudioFeatures(trackIds);
         const result = features.map((f, i) => ({
           trackId: trackIds[i],
-          features: f ? formatFeatures(f) : null,
-          raw: f
+          features: f
             ? {
                 energy: f.energy,
                 danceability: f.danceability,
@@ -386,39 +382,7 @@ export async function createServer(clientId: string) {
     }
   );
 
-  // ============ VIBE MATCHING TOOLS ============
-
-  server.tool(
-    "spotify_analyze_playlist_vibe",
-    "Analyze a playlist's 'vibe' by calculating average audio features.",
-    {
-      playlistId: z.string().describe("Spotify playlist ID"),
-      sampleSize: z.number().min(5).max(50).default(20).describe("Tracks to sample for analysis"),
-    },
-    async ({ playlistId, sampleSize }) => {
-      try {
-        const vibe = await matcher.analyzePlaylistVibe(playlistId, sampleSize);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(vibe, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        return {
-          isError: true,
-          content: [
-            {
-              type: "text",
-              text: `Failed to analyze playlist: ${error instanceof Error ? error.message : "Unknown error"}`,
-            },
-          ],
-        };
-      }
-    }
-  );
+  // ============ GENRE MATCHING TOOLS ============
 
   server.tool(
     "spotify_match_songs_to_playlists",

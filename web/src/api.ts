@@ -282,8 +282,3 @@ export interface BackfillResult {
 export async function backfillImages(): Promise<BackfillResult> {
   return fetchApi("/backfill-images", { method: "POST" });
 }
-
-// Debug function - call from browser console: await debugTestMatch()
-export async function debugTestMatch(): Promise<any> {
-  return fetchApi("/debug/test-match");
-}
