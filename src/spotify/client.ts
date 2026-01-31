@@ -201,16 +201,13 @@ export class SpotifyClient {
       chunks.push(artistIds.slice(i, i + 50));
     }
 
-    const results: SpotifyArtist[] = [];
+    // Fetch all chunks in parallel for better performance
+    const chunkPromises = chunks.map(chunk =>
+      this.request<{ artists: SpotifyArtist[] }>(`/artists?ids=${chunk.join(",")}`)
+    );
 
-    for (const chunk of chunks) {
-      const response = await this.request<{
-        artists: SpotifyArtist[];
-      }>(`/artists?ids=${chunk.join(",")}`);
-      results.push(...response.artists);
-    }
-
-    return results;
+    const responses = await Promise.all(chunkPromises);
+    return responses.flatMap(r => r.artists);
   }
 
   async getRelatedArtists(artistId: string): Promise<SpotifyArtist[]> {

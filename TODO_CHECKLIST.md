@@ -43,7 +43,7 @@
 
 ### Performance Optimization
 - [x] Add playlist profile caching with 1-hour TTL in `genre-matcher.ts`
-- [ ] Implement parallel artist fetching in `enrichTracksWithGenres`
+- [x] Implement parallel artist fetching in `getArtists` (batches fetched concurrently)
 - [ ] Add database indexes for frequently queried columns
 
 ### Observability
@@ -86,11 +86,11 @@
 ## Phase 4: QA & Testing (Priority 2-3)
 
 ### Edge Case Handling
-- [ ] Handle 0 liked songs gracefully
-- [ ] Handle 0 playlists gracefully
-- [ ] Handle OAuth denial/failure
-- [ ] Handle token refresh during API call
-- [ ] Handle session expiry during use
+- [x] Handle 0 liked songs gracefully (returns empty matches, frontend shows empty state)
+- [x] Handle 0 playlists gracefully (returns "No playlists available" reason)
+- [x] Handle OAuth denial/failure (redirects to frontend with error param)
+- [x] Handle token refresh during API call (auto-refreshes in RequestScopedOAuth)
+- [x] Handle session expiry during use (returns 401, clears session)
 
 ### Unit Tests
 - [ ] Set up Jest for backend
