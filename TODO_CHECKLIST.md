@@ -38,11 +38,11 @@
 
 ### Error Handling
 - [x] Add React Error Boundary component to `App.tsx`
-- [ ] Create consistent API error response format in `web-server.ts`
-- [ ] Add try-catch to all async handlers
+- [x] Create consistent API error response format in `web-server.ts`
+- [x] Add try-catch to all async handlers (already present)
 
 ### Performance Optimization
-- [ ] Add playlist profile caching with 1-hour TTL in `genre-matcher.ts`
+- [x] Add playlist profile caching with 1-hour TTL in `genre-matcher.ts`
 - [ ] Implement parallel artist fetching in `enrichTracksWithGenres`
 - [ ] Add database indexes for frequently queried columns
 
@@ -50,7 +50,7 @@
 - [ ] Add request logging middleware to Express
 - [ ] Add response timing to API endpoints
 - [ ] Create structured logging format (JSON)
-- [ ] Add `/api/health` metrics (uptime, version, storage mode)
+- [x] Add `/api/health` metrics (uptime, version, storage mode)
 
 ### Code Refactoring
 - [ ] Extract auth middleware to `src/middleware/auth.ts`

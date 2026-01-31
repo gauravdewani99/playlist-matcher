@@ -166,6 +166,33 @@ export function calculateMatchScore(
   };
 }
 
+// ============ PLAYLIST PROFILE CACHE ============
+
+interface CachedProfile {
+  profile: PlaylistProfile;
+  cachedAt: number;
+}
+
+// Simple in-memory cache with 1-hour TTL
+const profileCache = new Map<string, CachedProfile>();
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function getCachedProfile(playlistId: string): PlaylistProfile | null {
+  const cached = profileCache.get(playlistId);
+  if (!cached) return null;
+
+  if (Date.now() - cached.cachedAt > CACHE_TTL_MS) {
+    profileCache.delete(playlistId);
+    return null;
+  }
+
+  return cached.profile;
+}
+
+function setCachedProfile(playlistId: string, profile: PlaylistProfile): void {
+  profileCache.set(playlistId, { profile, cachedAt: Date.now() });
+}
+
 // ============ GENRE MATCHER CLASS ============
 
 export class GenreMatcher {
@@ -200,9 +227,16 @@ export class GenreMatcher {
   }
 
   /**
-   * Build a profile for a playlist based on its tracks
+   * Build a profile for a playlist based on its tracks.
+   * Results are cached for 1 hour to reduce Spotify API calls.
    */
   async buildPlaylistProfile(playlistId: string, sampleSize: number = 50): Promise<PlaylistProfile> {
+    // Check cache first
+    const cached = getCachedProfile(playlistId);
+    if (cached) {
+      return cached;
+    }
+
     const playlist = await this.spotifyClient.getPlaylist(playlistId);
     const tracks = await this.spotifyClient.getPlaylistTracks(playlistId, sampleSize);
 
@@ -232,7 +266,7 @@ export class GenreMatcher {
       totalPopularity += track.popularity;
     }
 
-    return {
+    const profile: PlaylistProfile = {
       playlistId,
       playlistName: playlist.name,
       trackCount: playlist.tracks.total,
@@ -242,6 +276,11 @@ export class GenreMatcher {
       genres: genreFreq,
       avgPopularity: totalPopularity / enrichedTracks.length,
     };
+
+    // Cache the profile
+    setCachedProfile(playlistId, profile);
+
+    return profile;
   }
 
   /**

@@ -31,6 +31,27 @@ const SCOPES = [
 ].join(" ");
 
 const SESSION_COOKIE_NAME = "sortify_session";
+const APP_VERSION = "1.0.0";
+const SERVER_START_TIME = Date.now();
+
+// Consistent API error response format
+interface ApiError {
+  error: string;
+  code?: string;
+  details?: string;
+}
+
+function createErrorResponse(message: string, code?: string, details?: string): ApiError {
+  const response: ApiError = { error: message };
+  if (code) response.code = code;
+  if (details) response.details = details;
+  return response;
+}
+
+function handleApiError(res: Response, error: unknown, defaultMessage: string, statusCode: number = 500): void {
+  const message = error instanceof Error ? error.message : defaultMessage;
+  res.status(statusCode).json(createErrorResponse(message));
+}
 
 // Extend Express Request to include user context
 interface AuthenticatedRequest extends Request {
@@ -336,13 +357,21 @@ export async function createWebServer(clientId: string, port: number = 3001) {
   };
 
   // ============ HEALTH CHECK ============
+  const healthResponse = () => ({
+    status: "ok",
+    version: APP_VERSION,
+    storage: usePostgres ? "postgresql" : "file",
+    multiUser: usePostgres,
+    uptime: Math.floor((Date.now() - SERVER_START_TIME) / 1000),
+    timestamp: new Date().toISOString(),
+  });
+
   app.get("/health", (_req, res) => {
-    res.json({
-      status: "ok",
-      storage: usePostgres ? "postgresql" : "file",
-      multiUser: usePostgres,
-      timestamp: new Date().toISOString(),
-    });
+    res.json(healthResponse());
+  });
+
+  app.get("/api/health", (_req, res) => {
+    res.json(healthResponse());
   });
 
   // ============ AUTH ENDPOINTS ============
@@ -562,7 +591,7 @@ export async function createWebServer(clientId: string, port: number = 3001) {
       const tracks = await spotifyClient.getLikedSongs(limit);
       res.json(tracks);
     } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to fetch liked songs" });
+      handleApiError(res, error, "Failed to fetch liked songs");
     }
   });
 
@@ -576,7 +605,7 @@ export async function createWebServer(clientId: string, port: number = 3001) {
       const enriched = await genreMatcher.enrichTracksWithGenres(tracks);
       res.json(enriched);
     } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to fetch liked songs" });
+      handleApiError(res, error, "Failed to fetch liked songs");
     }
   });
 
@@ -588,7 +617,7 @@ export async function createWebServer(clientId: string, port: number = 3001) {
       const playlists = await spotifyClient.getUserPlaylists(limit);
       res.json(playlists);
     } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to fetch playlists" });
+      handleApiError(res, error, "Failed to fetch playlists");
     }
   });
 
@@ -601,7 +630,7 @@ export async function createWebServer(clientId: string, port: number = 3001) {
       const tracks = await spotifyClient.getPlaylistTracks(playlistId, limit);
       res.json(tracks);
     } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to fetch playlist tracks" });
+      handleApiError(res, error, "Failed to fetch playlist tracks");
     }
   });
 
@@ -618,7 +647,7 @@ export async function createWebServer(clientId: string, port: number = 3001) {
       await spotifyClient.addTracksToPlaylist(playlistId, trackUris);
       res.json({ success: true, added: trackIds.length });
     } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to add tracks" });
+      handleApiError(res, error, "Failed to add tracks");
     }
   });
 
@@ -651,7 +680,7 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         alreadyMatched: result.matches.length - newMatches.length,
       });
     } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : "Failed to match songs" });
+      handleApiError(res, error, "Failed to match songs");
     }
   });
 
@@ -850,7 +879,7 @@ export async function createWebServer(clientId: string, port: number = 3001) {
       });
     } catch (error) {
       console.error(`[Sync] Error:`, error);
-      res.status(500).json({ error: error instanceof Error ? error.message : "Sync failed" });
+      handleApiError(res, error, "Sync failed");
     }
   });
 
