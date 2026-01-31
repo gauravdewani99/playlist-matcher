@@ -67,7 +67,7 @@
 - [x] Add focus states for keyboard navigation (global :focus-visible in index.css)
 
 ### Loading States
-- [ ] Add skeleton loader for Home page settings
+- [x] Add skeleton loader for Home page settings
 - [x] Add skeleton loader for Dashboard match history
 - [x] Add loading spinner during sync operation (sync button animation)
 
@@ -107,9 +107,9 @@
 - [ ] Test move track between playlists
 
 ### Documentation
-- [ ] Update README with current features
-- [ ] Document matching algorithm in code comments
-- [ ] Create deployment guide
+- [x] Update README with current features
+- [x] Document matching algorithm in code comments (in genre-matcher.ts)
+- [x] Create deployment guide (in README.md)
 
 ---
 

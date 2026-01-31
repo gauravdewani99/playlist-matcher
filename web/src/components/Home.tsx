@@ -210,8 +210,26 @@ export function Home({ user, onViewDashboard, onLogout, onLogin, onAbout }: Home
           <p className="settings-subtitle">Automatically sort your Spotify liked songs into playlists.</p>
 
           {loading ? (
-            <div className="settings-loading">
-              <div className="loader" />
+            <div className="settings-skeleton">
+              <div className="skeleton-rhythm" />
+              <div className="skeleton-rows">
+                <div className="skeleton-row">
+                  <div className="skeleton-text" />
+                  <div className="skeleton-stepper" />
+                  <div className="skeleton-text-short" />
+                </div>
+                <div className="skeleton-row">
+                  <div className="skeleton-text-short" />
+                  <div className="skeleton-stepper" />
+                  <div className="skeleton-text" />
+                </div>
+                <div className="skeleton-row">
+                  <div className="skeleton-text" />
+                  <div className="skeleton-stepper-small" />
+                  <div className="skeleton-text-short" />
+                </div>
+              </div>
+              <div className="skeleton-button" />
             </div>
           ) : (
             <>
