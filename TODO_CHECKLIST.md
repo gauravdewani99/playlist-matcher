@@ -44,11 +44,11 @@
 ### Performance Optimization
 - [x] Add playlist profile caching with 1-hour TTL in `genre-matcher.ts`
 - [x] Implement parallel artist fetching in `getArtists` (batches fetched concurrently)
-- [ ] Add database indexes for frequently queried columns
+- [x] Add database indexes for frequently queried columns (scheduled_jobs.next_run_at)
 
 ### Observability
 - [ ] Add request logging middleware to Express
-- [ ] Add response timing to API endpoints
+- [x] Add response timing to API endpoints (X-Response-Time header)
 - [ ] Create structured logging format (JSON)
 - [x] Add `/api/health` metrics (uptime, version, storage mode)
 
@@ -153,9 +153,9 @@ After each phase, verify:
 - [x] Debug endpoints return 404
 
 ### Phase 2 Complete
-- [ ] API responses include timing headers
-- [ ] Errors return consistent format
-- [ ] Playlist caching reduces API calls
+- [x] API responses include timing headers (X-Response-Time)
+- [x] Errors return consistent format (handleApiError helper)
+- [x] Playlist caching reduces API calls (1-hour TTL cache)
 
 ### Phase 3 Complete
 - [ ] All screens render on mobile (375px)

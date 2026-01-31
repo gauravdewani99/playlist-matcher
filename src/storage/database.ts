@@ -119,6 +119,9 @@ export async function initializeDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_sessions_expires ON user_sessions(expires_at);
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id);
 
+    -- Index for cron runner to find due jobs
+    CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_next_run ON scheduled_jobs(next_run_at) WHERE enabled = true;
+
     -- Temporary OAuth state storage (for PKCE flow)
     CREATE TABLE IF NOT EXISTS oauth_states (
       state VARCHAR(64) PRIMARY KEY,

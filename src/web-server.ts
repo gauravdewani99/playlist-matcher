@@ -265,6 +265,18 @@ export async function createWebServer(clientId: string, port: number = 3001) {
   app.use(express.json());
   app.use(cookieParser());
 
+  // Response timing middleware - adds X-Response-Time header
+  app.use((req, res, next) => {
+    const start = process.hrtime.bigint();
+    const originalJson = res.json.bind(res);
+    res.json = (body: unknown) => {
+      const duration = Number(process.hrtime.bigint() - start) / 1_000_000; // Convert to ms
+      res.setHeader("X-Response-Time", `${duration.toFixed(2)}ms`);
+      return originalJson(body);
+    };
+    next();
+  });
+
   // Cleanup expired sessions and OAuth states periodically
   if (usePostgres && sessionStore && oauthStateStore && oauthTokenBuffer) {
     setInterval(async () => {
