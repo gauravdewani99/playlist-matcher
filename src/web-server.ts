@@ -221,10 +221,6 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     frontendUrl,
   ].filter(Boolean);
 
-  console.log("Allowed CORS origins:", JSON.stringify(allowedOrigins));
-  console.log("Frontend URL:", frontendUrl);
-  console.log("FRONTEND_URL env:", process.env.FRONTEND_URL);
-
   // Middleware
   app.use(cors({
     origin: (origin, callback) => {
@@ -240,7 +236,6 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         // Return the actual origin (not normalized) for proper CORS headers
         callback(null, origin);
       } else {
-        console.log(`CORS blocked origin: ${origin}, allowed: ${allowedOrigins.join(", ")}`);
         callback(null, false);
       }
     },
@@ -441,21 +436,15 @@ export async function createWebServer(clientId: string, port: number = 3001) {
 
       if (usePostgres && pgTokenStore && sessionStore) {
         // Get user ID from Spotify
-        console.log("[Auth] Getting user info from Spotify...");
         const tempOauth = new TempOAuth(tokens.access_token);
         const tempClient = new SpotifyClient(tempOauth as any);
         const user = await tempClient.getCurrentUser();
-        console.log(`[Auth] Got user: ${user.id}`);
 
         // Save tokens to database with user ID
-        console.log("[Auth] Saving tokens to database...");
         await pgTokenStore.saveTokens(tokenData, user.id);
-        console.log("[Auth] Tokens saved");
 
         // Create session
-        console.log("[Auth] Creating session...");
         const session = await sessionStore.createSession(user.id);
-        console.log(`[Auth] Session created: ${session.sessionId.substring(0, 8)}...`);
 
         // For cross-origin setup (Vercel frontend + Railway backend),
         // pass session token in URL for frontend to store
@@ -479,20 +468,15 @@ export async function createWebServer(clientId: string, port: number = 3001) {
     try {
       if (usePostgres && sessionStore && pgTokenStore) {
         const sessionId = getSessionIdFromRequest(req);
-        console.log(`[Auth] Status check - sessionId: ${sessionId ? sessionId.substring(0, 8) + "..." : "none"}`);
 
         if (!sessionId) {
-          console.log("[Auth] No session found");
           return res.json({ authenticated: false });
         }
 
         const session = await sessionStore.getSession(sessionId);
         if (!session) {
-          console.log("[Auth] Session not found in database or expired");
           return res.json({ authenticated: false });
         }
-
-        console.log(`[Auth] Session valid for user: ${session.userId}`);
 
         // Get user info
         const oauth = new RequestScopedOAuth(clientId, pgTokenStore, session.userId);
@@ -502,11 +486,9 @@ export async function createWebServer(clientId: string, port: number = 3001) {
           const client = new SpotifyClient(tempOauth as any);
           const user = await client.getCurrentUser();
 
-          console.log(`[Auth] User authenticated: ${user.id}`);
           res.json({ authenticated: true, user });
         } catch (err) {
           // Token invalid, clear session
-          console.log(`[Auth] Token invalid for user ${session.userId}:`, err);
           await sessionStore.deleteSession(sessionId);
           res.json({ authenticated: false });
         }
@@ -546,7 +528,6 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         return res.status(401).json({ error: "Invalid session" });
       }
 
-      console.log(`[Auth] Session validated for user ${session.userId}`);
       res.json({ success: true, userId: session.userId });
     } catch (error) {
       console.error("[Auth] Validate session error:", error);
@@ -831,13 +812,8 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         userId = user.id;
       }
 
-      console.log(`[Sync] Starting sync for user ${userId}`);
-
       const settings = await settingsStore.getSettings(userId);
-      console.log(`[Sync] Settings: songsToMatch=${settings.songsToMatch}`);
-
       const matchedTrackIds = await matchHistoryStore.getMatchedTrackIds(userId);
-      console.log(`[Sync] Already matched: ${matchedTrackIds.size} tracks`);
 
       const result = await genreMatcher.autoOrganize(
         settings.songsToMatch,
@@ -846,10 +822,7 @@ export async function createWebServer(clientId: string, port: number = 3001) {
         false
       );
 
-      console.log(`[Sync] autoOrganize result: ${result.matches.length} matches, ${result.unmatched.length} unmatched`);
-
       const newMatches = result.matches.filter((m) => !matchedTrackIds.has(m.trackId));
-      console.log(`[Sync] New matches (after filtering): ${newMatches.length}`);
 
       if (newMatches.length > 0) {
         const matchRecords = newMatches.map((m) => ({
@@ -862,12 +835,12 @@ export async function createWebServer(clientId: string, port: number = 3001) {
           matchedAt: Date.now(),
         }));
         await matchHistoryStore.addMatches(userId, matchRecords);
-        console.log(`[Sync] Saved ${matchRecords.length} match records to database`);
       }
 
       // Update last match run timestamp
       await matchHistoryStore.updateLastMatchRun(userId);
-      console.log(`[Sync] Updated lastMatchRun for user ${userId}`);
+
+      console.log(`[Sync] User ${userId}: ${newMatches.length} new matches added`);
 
       res.json({
         success: true,

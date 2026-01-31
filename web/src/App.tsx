@@ -41,7 +41,6 @@ function App() {
       try {
         await validateSession(sessionToken);
         setStoredSession(sessionToken);
-        console.log("[Auth] Session stored in localStorage");
       } catch (err) {
         console.error("[Auth] Failed to validate session:", err);
         setError("Failed to complete authentication");
@@ -60,7 +59,7 @@ function App() {
       const status = await getAuthStatus();
       setAuthStatus(status);
       setError(null);
-    } catch (err) {
+    } catch {
       setError("Failed to check authentication status. Is the backend running?");
       setAuthStatus({ authenticated: false });
     } finally {
@@ -72,7 +71,7 @@ function App() {
     try {
       const { url } = await getAuthUrl();
       window.location.href = url;
-    } catch (err) {
+    } catch {
       setError("Failed to start authentication. Is the backend running?");
     }
   }
@@ -82,7 +81,7 @@ function App() {
       await logout();
       setAuthStatus({ authenticated: false });
       setView("home");
-    } catch (err) {
+    } catch {
       setError("Failed to logout");
     }
   }
