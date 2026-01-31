@@ -12,6 +12,18 @@
   --spotify-text-subdued: #a7a7a7;
   --spotify-text-base: #b3b3b3;
 
+  /* Semantic Colors */
+  --bg-primary: var(--spotify-dark-base);
+  --bg-secondary: var(--spotify-dark-elevated);
+  --bg-tertiary: var(--spotify-dark-highlight);
+  --text-primary: var(--spotify-white);
+  --text-secondary: var(--spotify-text-subdued);
+  --accent: var(--spotify-green);
+  --accent-hover: var(--spotify-green-light);
+  --error: #dc2626;
+  --warning: #f59e0b;
+  --success: var(--spotify-green);
+
   /* Spacing */
   --spacing-xs: 4px;
   --spacing-sm: 8px;

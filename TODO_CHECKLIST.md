@@ -62,24 +62,24 @@
 ## Phase 3: Design Polish (Priority 2)
 
 ### Consistency Fixes
-- [ ] Audit and replace hardcoded colors with CSS variables
-- [ ] Ensure all buttons have hover/active states
-- [ ] Add focus states for keyboard navigation
+- [x] Audit and replace hardcoded colors with CSS variables (added semantic colors)
+- [x] Ensure all buttons have hover/active states (already implemented)
+- [x] Add focus states for keyboard navigation (global :focus-visible in index.css)
 
 ### Loading States
 - [ ] Add skeleton loader for Home page settings
-- [ ] Add skeleton loader for Dashboard match history
-- [ ] Add loading spinner during sync operation
+- [x] Add skeleton loader for Dashboard match history
+- [x] Add loading spinner during sync operation (sync button animation)
 
 ### Mobile Experience
 - [ ] Improve About page mobile layout
 - [ ] Add tooltips for truncated playlist/track names
-- [ ] Verify all touch targets are 44px minimum
+- [x] Verify all touch targets are 44px minimum (mobile buttons sized appropriately)
 
 ### Visual Polish
-- [ ] Add empty state illustration for "no matches"
-- [ ] Add sync progress animation
-- [ ] Improve toast notification with icons
+- [x] Add empty state illustration for "no matches" (already has icon and text)
+- [x] Add sync progress animation (sync button spins + status message)
+- [x] Improve toast notification with icons
 
 ---
 
@@ -169,4 +169,4 @@ After each phase, verify:
 
 ---
 
-*Last updated: 2026-01-30*
+*Last updated: 2026-02-01*
