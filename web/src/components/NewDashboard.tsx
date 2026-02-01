@@ -562,11 +562,12 @@ export function NewDashboard({ user, onBack, onLogout, onAbout }: DashboardProps
                               <button
                                 className="track-name-link"
                                 onClick={() => openTrackInSpotify(match.trackId)}
+                                title={match.trackName || match.trackId}
                               >
                                 {match.trackName || match.trackId}
                               </button>
                               {match.artistNames && (
-                                <span className="track-artist">{match.artistNames}</span>
+                                <span className="track-artist" title={match.artistNames}>{match.artistNames}</span>
                               )}
                             </div>
 
@@ -594,7 +595,7 @@ export function NewDashboard({ user, onBack, onLogout, onAbout }: DashboardProps
                                   </svg>
                                 )}
                               </div>
-                              <span className="playlist-chip-name">{match.playlistName}</span>
+                              <span className="playlist-chip-name" title={match.playlistName}>{match.playlistName}</span>
                             </div>
 
                             <button
@@ -640,7 +641,7 @@ export function NewDashboard({ user, onBack, onLogout, onAbout }: DashboardProps
                           )}
                         </div>
                         <div className="playlist-group-info">
-                          <span className="playlist-group-name">{group.playlistName}</span>
+                          <span className="playlist-group-name" title={group.playlistName}>{group.playlistName}</span>
                           <span className="playlist-group-count">
                             {group.tracks.length} {group.tracks.length === 1 ? "track" : "tracks"} matched
                           </span>
@@ -689,11 +690,12 @@ export function NewDashboard({ user, onBack, onLogout, onAbout }: DashboardProps
                                 <button
                                   className="track-name-link"
                                   onClick={() => openTrackInSpotify(track.trackId)}
+                                  title={track.trackName || track.trackId}
                                 >
                                   {track.trackName || track.trackId}
                                 </button>
                                 {track.artistNames && (
-                                  <span className="playlist-track-artist">{track.artistNames}</span>
+                                  <span className="playlist-track-artist" title={track.artistNames}>{track.artistNames}</span>
                                 )}
                               </div>
                               <span className="playlist-track-date">{formatDate(track.matchedAt)}</span>

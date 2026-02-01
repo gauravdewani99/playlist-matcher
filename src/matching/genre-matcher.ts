@@ -47,7 +47,7 @@ export interface MatchResult {
 /**
  * Jaccard similarity: |A ∩ B| / |A ∪ B|
  */
-function jaccardSimilarity(setA: Set<string>, setB: Set<string>): number {
+export function jaccardSimilarity(setA: Set<string>, setB: Set<string>): number {
   if (setA.size === 0 && setB.size === 0) return 0;
 
   const intersection = new Set([...setA].filter(x => setB.has(x)));
@@ -59,7 +59,7 @@ function jaccardSimilarity(setA: Set<string>, setB: Set<string>): number {
 /**
  * Check if any artist from the track is in the playlist
  */
-function artistOverlapScore(trackArtistIds: string[], playlistArtistIds: Set<string>): number {
+export function artistOverlapScore(trackArtistIds: string[], playlistArtistIds: Set<string>): number {
   if (trackArtistIds.length === 0 || playlistArtistIds.size === 0) return 0;
 
   const matchingArtists = trackArtistIds.filter(id => playlistArtistIds.has(id));
@@ -76,7 +76,7 @@ function artistOverlapScore(trackArtistIds: string[], playlistArtistIds: Set<str
 /**
  * Genre overlap using Jaccard similarity
  */
-function genreOverlapScore(trackGenres: string[], playlistGenres: Set<string>): number {
+export function genreOverlapScore(trackGenres: string[], playlistGenres: Set<string>): number {
   if (trackGenres.length === 0 || playlistGenres.size === 0) return 0;
 
   const trackGenreSet = new Set(trackGenres);
@@ -86,7 +86,7 @@ function genreOverlapScore(trackGenres: string[], playlistGenres: Set<string>): 
 /**
  * Weighted genre score - genres that appear more frequently in playlist get higher weight
  */
-function weightedGenreScore(trackGenres: string[], playlistGenreFreq: Map<string, number>): number {
+export function weightedGenreScore(trackGenres: string[], playlistGenreFreq: Map<string, number>): number {
   if (trackGenres.length === 0 || playlistGenreFreq.size === 0) return 0;
 
   // Find max frequency for normalization
@@ -114,7 +114,7 @@ function weightedGenreScore(trackGenres: string[], playlistGenreFreq: Map<string
 /**
  * Popularity similarity - tracks with similar popularity to playlist average score higher
  */
-function popularitySimilarity(trackPopularity: number, playlistAvgPopularity: number): number {
+export function popularitySimilarity(trackPopularity: number, playlistAvgPopularity: number): number {
   // Both are 0-100 scale
   const diff = Math.abs(trackPopularity - playlistAvgPopularity);
 

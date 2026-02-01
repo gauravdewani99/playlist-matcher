@@ -265,15 +265,33 @@ export async function createWebServer(clientId: string, port: number = 3001) {
   app.use(express.json());
   app.use(cookieParser());
 
-  // Response timing middleware - adds X-Response-Time header
+  // Request logging and timing middleware
   app.use((req, res, next) => {
     const start = process.hrtime.bigint();
+    const timestamp = new Date().toISOString();
+
+    // Log request on completion
+    res.on("finish", () => {
+      const duration = Number(process.hrtime.bigint() - start) / 1_000_000;
+      const logData = {
+        timestamp,
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        duration: `${duration.toFixed(2)}ms`,
+      };
+      // Use structured JSON format for easier parsing
+      console.log(`[Request] ${JSON.stringify(logData)}`);
+    });
+
+    // Add X-Response-Time header
     const originalJson = res.json.bind(res);
     res.json = (body: unknown) => {
-      const duration = Number(process.hrtime.bigint() - start) / 1_000_000; // Convert to ms
+      const duration = Number(process.hrtime.bigint() - start) / 1_000_000;
       res.setHeader("X-Response-Time", `${duration.toFixed(2)}ms`);
       return originalJson(body);
     };
+
     next();
   });
 

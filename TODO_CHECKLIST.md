@@ -47,9 +47,9 @@
 - [x] Add database indexes for frequently queried columns (scheduled_jobs.next_run_at)
 
 ### Observability
-- [ ] Add request logging middleware to Express
+- [x] Add request logging middleware to Express
 - [x] Add response timing to API endpoints (X-Response-Time header)
-- [ ] Create structured logging format (JSON)
+- [x] Create structured logging format (JSON)
 - [x] Add `/api/health` metrics (uptime, version, storage mode)
 
 ### Code Refactoring
@@ -72,8 +72,8 @@
 - [x] Add loading spinner during sync operation (sync button animation)
 
 ### Mobile Experience
-- [ ] Improve About page mobile layout
-- [ ] Add tooltips for truncated playlist/track names
+- [x] Improve About page mobile layout
+- [x] Add tooltips for truncated playlist/track names
 - [x] Verify all touch targets are 44px minimum (mobile buttons sized appropriately)
 
 ### Visual Polish
@@ -93,9 +93,9 @@
 - [x] Handle session expiry during use (returns 401, clears session)
 
 ### Unit Tests
-- [ ] Set up Jest for backend
-- [ ] Test Jaccard similarity function
-- [ ] Test score calculation formula
+- [x] Set up Jest for backend
+- [x] Test Jaccard similarity function
+- [x] Test score calculation formula
 - [ ] Test settings validation/clamping
 - [ ] Set up Vitest for frontend
 - [ ] Test date formatting functions
