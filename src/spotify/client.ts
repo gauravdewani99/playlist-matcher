@@ -74,7 +74,7 @@ export class SpotifyClient {
     return JSON.parse(text);
   }
 
-  async getCurrentUser(): Promise<{ id: string; display_name: string }> {
+  async getCurrentUser(): Promise<{ id: string; display_name: string; email?: string }> {
     return this.request("/me");
   }
 

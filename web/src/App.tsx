@@ -4,9 +4,10 @@ import type { AuthStatus } from "./api";
 import { Home } from "./components/Home";
 import { NewDashboard } from "./components/NewDashboard";
 import { About } from "./components/About";
+import { BetaAccessError } from "./components/BetaAccessError";
 import "./App.css";
 
-type View = "home" | "dashboard" | "about";
+type View = "home" | "dashboard" | "about" | "beta-error";
 
 function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
@@ -31,6 +32,12 @@ function App() {
     }
 
     if (authError) {
+      // Handle beta access error specially
+      if (authError === "beta_access") {
+        setView("beta-error");
+        setLoading(false);
+        return;
+      }
       setError(`Authentication failed: ${authError}`);
       setLoading(false);
       return;
@@ -92,6 +99,11 @@ function App() {
         <div className="loader" />
       </div>
     );
+  }
+
+  // Show beta access error
+  if (view === "beta-error") {
+    return <BetaAccessError onBack={() => setView("home")} />;
   }
 
   // Show About page

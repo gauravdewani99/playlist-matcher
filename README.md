@@ -78,6 +78,7 @@ SPOTIFY_CLIENT_ID=your_client_id
 DATABASE_URL=postgresql://...
 REDIRECT_URI=https://your-backend.com/api/auth/callback
 FRONTEND_URL=https://your-frontend.com
+BETA_WHITELIST=user1@example.com,user2@example.com  # Optional: comma-separated emails for beta access
 ```
 
 **Frontend:**

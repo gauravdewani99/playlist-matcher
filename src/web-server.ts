@@ -494,10 +494,22 @@ export async function createWebServer(clientId: string, port: number = 3001) {
       };
 
       if (usePostgres && pgTokenStore && sessionStore) {
-        // Get user ID from Spotify
+        // Get user ID and email from Spotify
         const tempOauth = new TempOAuth(tokens.access_token);
         const tempClient = new SpotifyClient(tempOauth as any);
         const user = await tempClient.getCurrentUser();
+
+        // Check beta whitelist (optional, for production beta)
+        const betaWhitelist = process.env.BETA_WHITELIST;
+        if (betaWhitelist) {
+          const allowedEmails = betaWhitelist.split(',').map(e => e.trim().toLowerCase());
+          const userEmail = user.email?.toLowerCase();
+
+          if (!userEmail || !allowedEmails.includes(userEmail)) {
+            console.log(`[Auth] User ${user.id} (${userEmail}) not in beta whitelist`);
+            return res.redirect(`${frontendUrl}?error=beta_access`);
+          }
+        }
 
         // Save tokens to database with user ID
         await pgTokenStore.saveTokens(tokenData, user.id);
