@@ -32,7 +32,8 @@
 .logo-icon {
   width: 36px;
   height: 36px;
-  color: var(--spotify-green);
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .logo-text {
@@ -153,7 +154,8 @@
 .settings-title-icon {
   width: 44px;
   height: 44px;
-  color: var(--spotify-green);
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .settings-title {
